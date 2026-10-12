@@ -1,0 +1,24 @@
+# Desarrollo local: PostgreSQL 16 + API. Uso: docker compose up --build
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hospital
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 10
+    volumes: [pgdata:/var/lib/postgresql/data]
+  api:
+    build: .
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/hospital
+      AUTH_JWT_SECRET: dev-secret-solo-local-cambiar-por-lo-menos-32-bytes
+      ENVIRONMENT: local
+    ports: ["8000:8000"]
+volumes:
+  pgdata:
