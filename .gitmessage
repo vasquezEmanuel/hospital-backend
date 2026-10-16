@@ -1,0 +1,9 @@
+# tipo(alcance): resumen corto en minúsculas, sin punto final (máx. 72 caracteres)
+#
+# Por qué se hizo el cambio (opcional, una o dos líneas):
+#
+# Sprint N · Paso M
+#
+# Tipos:    feat fix db docs test refactor ci chore
+# Alcances: db api auth etl imagenes funciones docs ci
+# (si el tipo ya dice el alcance, omítelo: "db: agrega tabla x")
