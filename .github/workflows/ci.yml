@@ -1,5 +1,6 @@
-# Un solo workflow. PR y push a main: lint + pruebas + coherencia schema.sql/migraciones + dependencias.
-# Push a main además aplica las migraciones a la BD; Render despliega la API cuando este workflow termina bien.
+# CI: se ejecuta en cada Pull Request y en cada push a main.
+# Revisa estilo, pruebas, que schema.sql y las migraciones coincidan, y vulnerabilidades en dependencias.
+# (El paso de migrar la base de datos y desplegar se agrega más adelante, cuando exista Supabase/Render.)
 name: CI
 on:
   pull_request:
@@ -46,17 +47,3 @@ jobs:
             postgresql://postgres:postgres@localhost:5432/drift_b
       - name: Dependencias con vulnerabilidades conocidas
         run: pip-audit -r requirements.txt
-
-  migrar:
-    name: Migrar base de datos
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12", cache: pip }
-      - run: pip install -r requirements.txt
-      - run: alembic upgrade head
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
