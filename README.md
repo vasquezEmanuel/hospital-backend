@@ -4,10 +4,9 @@ FastAPI + SQLAlchemy 2 + PostgreSQL 16. `schema.sql` es la fuente de verdad del 
 Alembic lo reproducen y el CI verifica que ambos coincidan (`scripts/check_schema_drift.py`).
 
 ## Estado
-- **Sprint 1 — cerrado:** esquema v1.2 (0001 base · 0002 ajustes del front · 0003 tratamientos/importador), API de
-  pacientes y catálogo CIE-10, validación de JWT, Swagger en `/docs`.
-- **Sprint 2 — pendiente:** ETL y carga inicial.
-- **Despliegue: pendiente (Sprint 5).**
+**Estado — Sprint 2:** esquema v1.2, API de pacientes y catálogo CIE-10 (búsqueda sin tildes), validación de JWT,
+Swagger en `/docs` e importador ETL (`python -m etl.cli catalogo|atenciones ARCHIVO`) con cola de revisión.
+Guía para mostrar el sistema: [docs/DEMO.md](docs/DEMO.md). Atenciones, imágenes y expediente: Sprint 3.
 
 ## Desarrollo local
 ```bash
@@ -18,6 +17,19 @@ uvicorn app.main:app --reload     # Swagger: http://localhost:8000/docs
 pytest                            # usa TEST_DATABASE_URL (por defecto postgres local, base hospital_test)
 ```
 Cambiar el modelo de datos: 1) `schema.sql`, 2) migración en `alembic/versions/`, 3) `pytest` (incluye la comprobación de drift).
+
+## Windows (PowerShell)
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+docker compose up -d db
+docker compose exec db psql -U postgres -c "CREATE DATABASE hospital_test;"   # solo la primera vez
+alembic upgrade head
+ruff check .
+ruff format --check .
+pytest
+```
+PowerShell 5.1 no acepta `&&`: ejecuta un comando por línea.
 
 ## Integración continua
 `.github/workflows/ci.yml` corre en cada push y Pull Request: lint (ruff), pruebas sobre PostgreSQL real,
