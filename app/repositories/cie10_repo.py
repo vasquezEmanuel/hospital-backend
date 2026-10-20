@@ -4,6 +4,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Cie10
+from app.repositories.busqueda import normalizar_busqueda, sin_tildes
 
 
 def buscar(
@@ -12,11 +13,12 @@ def buscar(
     stmt = select(Cie10)
     if q:
         q = q.strip()
+        texto = normalizar_busqueda(q)
         stmt = stmt.where(
             or_(
                 Cie10.cod_4.istartswith(q, autoescape=True),
-                Cie10.descripcion_4.icontains(q, autoescape=True),
-                Cie10.descripcion_3.icontains(q, autoescape=True),
+                sin_tildes(Cie10.descripcion_4).contains(texto, autoescape=True),
+                sin_tildes(Cie10.descripcion_3).contains(texto, autoescape=True),
             )
         )
     if odontologico is not None:

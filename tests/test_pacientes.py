@@ -13,6 +13,10 @@ def test_busqueda_por_nombre_documento_y_codigo(client, seed):
     cod = client.get("/api/v1/pacientes", params={"q": "carlos"}).json()["items"][0]["codigo"]
     assert client.get("/api/v1/pacientes", params={"q": cod}).json()["items"][0]["nombre"] == "Carlos Gómez"
 
+def test_busqueda_ignora_tildes_y_mayusculas(client, seed):
+    assert client.get("/api/v1/pacientes", params={"q": "maria rodriguez"}).json()["total"] == 1
+    assert client.get("/api/v1/pacientes", params={"q": "MARÍA"}).json()["total"] == 1
+    assert client.get("/api/v1/pacientes", params={"q": "gomez"}).json()["items"][0]["nombre"] == "Carlos Gómez"
 
 def test_q_no_interpreta_comodines(client, seed):
     assert client.get("/api/v1/pacientes", params={"q": "%"}).json()["total"] == 0

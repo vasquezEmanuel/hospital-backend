@@ -10,6 +10,7 @@ from sqlalchemy import Select, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Aseguradora, Atencion, Paciente
+from app.repositories.busqueda import normalizar_busqueda, sin_tildes
 
 _CODIGO = re.compile(r"^P-?(\d+)$", re.IGNORECASE)
 _DOC_SEPARATORS = re.compile(r"[.\s-]")
@@ -46,7 +47,7 @@ def listar(
         base = base.where(Paciente.documento_identidad == _DOC_SEPARATORS.sub("", documento).upper())
     if q:
         q = q.strip()
-        condiciones = [Paciente.nombre.icontains(q, autoescape=True)]
+        condiciones = [sin_tildes(Paciente.nombre).contains(normalizar_busqueda(q), autoescape=True)]
         solo_doc = _DOC_SEPARATORS.sub("", q)
         if solo_doc:
             condiciones.append(Paciente.documento_identidad.icontains(solo_doc, autoescape=True))
