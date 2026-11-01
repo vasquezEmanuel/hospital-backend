@@ -36,6 +36,8 @@ class ResultadoCarga:
     rechazados: int = 0  # van a importacion_fila para revisión manual
     pacientes_nuevos: int = 0
     aseguradoras_nuevas: int = 0
+    odontologicos: int = 0  # catálogo: códigos marcados como odontológicos
+    bucales_sin_codigo: int = 0  # atenciones: diagnósticos bucales guardados solo como texto
     id_importacion: int | None = None
     ejemplos: list[str] = field(default_factory=list)
 
@@ -48,10 +50,13 @@ class ResultadoCarga:
             f"  Omitidos (ya existían)  : {self.omitidos}",
             f"  A revisión manual       : {self.rechazados}",
         ]
+        if self.tipo == "cie10":
+            salida.append(f"  Marcados odontológicos  : {self.odontologicos}")
         if self.tipo == "atenciones":
             salida += [
                 f"  Pacientes nuevos        : {self.pacientes_nuevos}",
                 f"  Aseguradoras nuevas     : {self.aseguradoras_nuevas}",
+                f"  Dx bucal solo en texto  : {self.bucales_sin_codigo} (sin código CIE-10, pendientes de codificar)",
             ]
         if self.ejemplos:
             salida.append("  Motivos de revisión (primeros):")
@@ -114,10 +119,11 @@ def _registrar_rechazos(r: ResultadoCarga, rechazos: list[Rechazo]) -> None:
 # ---------------------------------------------------------------- catálogo CIE-10
 
 
-def cargar_catalogo(db: Session, ruta) -> ResultadoCarga:
+def cargar_catalogo(db: Session, ruta, herencia_categoria: bool = True) -> ResultadoCarga:
     """Inserta los códigos nuevos y actualiza los que cambiaron. Repetir la carga no duplica nada."""
-    lectura = leer_catalogo(ruta)  # si el archivo no sirve, falla antes de tocar la base
+    lectura = leer_catalogo(ruta, herencia_categoria)  # si el archivo no sirve, falla antes de tocar la base
     resultado = ResultadoCarga("cie10", Path(ruta).name, total=len(lectura.filas) + len(lectura.rechazos))
+    resultado.odontologicos = sum(f.es_odontologico for f in lectura.filas)
     resultado.id_importacion = _abrir_importacion(db, "cie10", resultado.archivo, resultado.total)
     try:
         existentes = {
@@ -193,6 +199,7 @@ class _Contexto:
     profesionales: dict[str, int]
     pacientes_nuevos: int = 0
     aseguradoras_nuevas: int = 0
+    bucales_sin_codigo: int = 0
 
 
 def _cargar_contexto(db: Session) -> _Contexto:
@@ -239,6 +246,12 @@ def _resolver_codigos(valor: str, cat: _Catalogo) -> tuple[list[str], str | None
 
 
 def _resolver_diagnosticos(fila: FilaAtencion, cat: _Catalogo) -> tuple[str | None, list[tuple[str, list[str]]]]:
+    """Devuelve (código del diagnóstico de hospitalización, [(texto, códigos)] de los diagnósticos bucales).
+
+    El diagnóstico de hospitalización debe resolver a un código (relación 1:1 con cie10). El diagnóstico bucal llega en
+    la fuente como texto clínico libre ("CARIES", "GINGIVITIS"): si resuelve a códigos se vinculan (y deben ser
+    odontológicos, regla 2); si no, se conserva SOLO el texto original, sin código, para codificarlo después.
+    """
     motivos: list[str] = []
     hospitalario = None
     if fila.dx_hospitalario:
@@ -251,10 +264,7 @@ def _resolver_diagnosticos(fila: FilaAtencion, cat: _Catalogo) -> tuple[str | No
             hospitalario = codigos[0]
     bucales: list[tuple[str, list[str]]] = []
     for numero, valor in fila.dx_bucales:
-        codigos, error = _resolver_codigos(valor, cat)
-        if error:
-            motivos.append(f"Diagnóstico bucal {numero}: {error}")
-            continue
+        codigos, _sin_resolver = _resolver_codigos(valor, cat)  # sin resolver = texto libre, no es un error
         no_odontologicos = [c for c in codigos if not cat.por_codigo[c]]
         if no_odontologicos:  # regla 2
             motivos.append(
@@ -271,6 +281,7 @@ def _procesar_fila(db: Session, fila: FilaAtencion, ctx: _Contexto) -> str:
     """Inserta una fila completa o no inserta nada. Devuelve 'insertado' u 'omitido'."""
     hospitalario, bucales = _resolver_diagnosticos(fila, ctx.catalogo)
     agregadas: list[str] = []
+    sin_codigo = 0
     try:
         with db.begin_nested():  # savepoint: si algo falla, esta fila no deja rastro
             id_paciente = db.execute(
@@ -352,12 +363,14 @@ def _procesar_fila(db: Session, fila: FilaAtencion, ctx: _Contexto) -> str:
                         text("INSERT INTO cie10_x_diagnostico_bucal (cod_4, id_diagnostico_bucal) VALUES (:c, :d)"),
                         {"c": cod_4, "d": id_bucal},
                     )
+                sin_codigo += not codigos
     except Exception:
         for clave in agregadas:  # la aseguradora creada en este savepoint ya no existe
             ctx.aseguradoras.pop(clave, None)
         raise
     ctx.pacientes_nuevos += paciente_nuevo
     ctx.aseguradoras_nuevas += aseguradora_nueva
+    ctx.bucales_sin_codigo += sin_codigo
     return "insertado"
 
 
@@ -387,6 +400,7 @@ def cargar_atenciones(db: Session, ruta) -> ResultadoCarga:
                 resultado.omitidos += 1
         resultado.pacientes_nuevos = ctx.pacientes_nuevos
         resultado.aseguradoras_nuevas = ctx.aseguradoras_nuevas
+        resultado.bucales_sin_codigo = ctx.bucales_sin_codigo
         _guardar_filas(db, resultado.id_importacion, revision, "revision")
         _registrar_rechazos(resultado, revision)
         _cerrar_importacion(db, resultado, "completado")

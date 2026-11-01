@@ -7,3 +7,4 @@ pydantic[email]>=2.8,<3
 pydantic-settings>=2.4,<3
 PyJWT[crypto]>=2.9,<3
 openpyxl>=3.1,<4
+xlrd>=2.0.1,<3

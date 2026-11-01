@@ -34,6 +34,17 @@ class Settings(BaseSettings):
 
     cors_origins: str = ""  # lista separada por comas
 
+    # --- Almacenamiento de imágenes clínicas (Sprint 3) ---
+    storage_backend: str = "local"  # local (desarrollo) | s3 (producción: cualquier almacenamiento compatible con S3)
+    storage_local_dir: str = "almacen_local"
+    storage_bucket: str = ""
+    storage_endpoint_url: str = ""  # vacío = AWS; con valor = otro proveedor compatible con S3
+    storage_region: str = ""
+    storage_signing_secret: str = ""  # firma los enlaces del almacenamiento local; si falta, se usa auth_jwt_secret
+    signed_url_ttl_seconds: int = 300  # regla 7: el acceso a imágenes es solo por enlaces temporales firmados
+    max_upload_mb: int = 15
+    public_base_url: str = "http://localhost:8000"  # prefijo de los enlaces del almacenamiento local
+
     @property
     def sqlalchemy_url(self) -> str:
         """Render/Supabase entregan 'postgresql://'; se fuerza el driver psycopg (v3)."""

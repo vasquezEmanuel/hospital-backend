@@ -3,6 +3,7 @@
 from datetime import date
 
 import pytest
+import xlwt
 from openpyxl import Workbook
 
 from etl.archivos import texto
@@ -86,3 +87,22 @@ def test_csv_con_punto_y_coma(tmp_path):
     )
     (fila,) = leer_atenciones(ruta).filas
     assert fila.documento == "1025847210" and fila.dx_bucales == [(1, "K021")]
+
+
+def test_xls_con_fechas_de_excel_y_diagnosticos_en_texto_libre(tmp_path):
+    ruta = tmp_path / "a.xls"
+    libro = xlwt.Workbook()
+    hoja = libro.add_sheet("Hoja1")
+    for j, h in enumerate(["FECHA DE LA ATENCIÓN", " NOMBRE", "DOCUMENTO DE IDENTIDAD", "DIAGNÓSTICO BUCAL 1"]):
+        hoja.write(0, j, h)
+    hoja.write(1, 0, date(2026, 9, 12), xlwt.easyxf(num_format_str="DD/MM/YYYY"))  # celda de tipo fecha
+    hoja.write(1, 1, "Ana Pérez")
+    hoja.write(1, 2, 1025847210)  # número, no texto
+    hoja.write(1, 3, "CARIES")
+    hoja.write(2, 0, 46277)  # número de serie sin formato de fecha
+    hoja.write(2, 1, "Luis Gómez")
+    hoja.write(2, 2, "79421880")
+    libro.save(str(ruta))
+    ana, luis = leer_atenciones(ruta).filas
+    assert (ana.fecha, ana.documento, ana.dx_bucales) == (date(2026, 9, 12), "1025847210", [(1, "CARIES")])
+    assert (luis.fecha, luis.documento) == (date(2026, 9, 12), "79421880")

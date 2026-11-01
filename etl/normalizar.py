@@ -6,13 +6,15 @@ Regla 1 del prompt: el documento de identidad se normaliza con la MISMA función
 
 import re
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from app.schemas.paciente import normalizar_documento  # una sola regla para API y ETL
 
 __all__ = ["clave_texto", "limpiar_codigo_cie10", "normalizar_documento", "parsear_fecha", "vacio"]
 
 _ESPACIOS = re.compile(r"\s+")
+_EPOCA_EXCEL = datetime(1899, 12, 30)  # sistema de fechas 1900 de Excel
+_SERIAL_MIN, _SERIAL_MAX = 36526, 73051  # 2000-01-01 .. 2099-12-31
 _FORMATOS_FECHA = ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y")
 
 
@@ -32,16 +34,21 @@ def clave_texto(valor: str) -> str:
 
 
 def limpiar_codigo_cie10(valor: str) -> str:
-    """'k02.1 ' -> 'K021'. cie10.cod_4 se guarda sin punto y en mayúsculas."""
-    return re.sub(r"[.\s]", "", str(valor)).upper()
+    """'k02.1 ' -> 'K021'; 'A065†' -> 'A065'. cie10.cod_4 se guarda sin punto, sin †/* y en mayúsculas.
+
+    El catálogo oficial marca con † o * los códigos de doble clasificación; no forman parte del código.
+    """
+    return re.sub(r"[.\s†‡*]", "", str(valor)).upper()
 
 
 def parsear_fecha(valor) -> date:
-    """Acepta date/datetime (lo que entrega Excel) o texto DD/MM/AAAA | AAAA-MM-DD. Lanza ValueError si no."""
+    """Acepta date/datetime, número de serie de Excel o texto DD/MM/AAAA | AAAA-MM-DD. Lanza ValueError si no."""
     if isinstance(valor, datetime):
         return valor.date()
     if isinstance(valor, date):
         return valor
+    if isinstance(valor, int | float) and not isinstance(valor, bool) and _SERIAL_MIN <= valor <= _SERIAL_MAX:
+        return (_EPOCA_EXCEL + timedelta(days=int(valor))).date()  # número de serie de Excel sin formato de fecha
     texto = str(valor).strip()
     for formato in _FORMATOS_FECHA:
         try:

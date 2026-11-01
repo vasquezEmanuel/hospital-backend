@@ -1,9 +1,10 @@
 -- ============================================================================
--- Esquema v1.2 — Sistema de Gestión de Pacientes, Enfermedades e
+-- Esquema v1.3 — Sistema de Gestión de Pacientes, Enfermedades e
 -- Imágenes Clínicas — Hospital Alma Mater, Área de Odontología.
 -- Motor: PostgreSQL 16
 -- v1.1: ajustes tras contrastar el front (ver alembic/versions/0002_ajustes_front.py).
 -- v1.2: tratamientos, cola de revisión del importador, aseguradora.activo (ver alembic/versions/0003_*.py).
+-- v1.3: clave de almacenamiento única en imagen_clinica (ver alembic/versions/0004_*.py).
 --       La línea base v1.0 vive intacta en alembic/sql/0001_baseline.sql.
 -- ============================================================================
 
@@ -179,8 +180,8 @@ CREATE TABLE importacion_fila (
     resuelto_por     INTEGER REFERENCES profesional (id_profesional),
     resuelto_en      TIMESTAMPTZ
 );
-CREATE INDEX idx_importacion_fila_imp ON importacion (id_importacion);
-CREATE INDEX idx_importacion_fila_estado ON importacion (estado);
+CREATE INDEX idx_importacion_fila_imp ON importacion_fila (id_importacion);
+CREATE INDEX idx_importacion_fila_estado ON importacion_fila (estado);
 
 -- ---------------------------------------------------------------------------
 -- Imágenes clínicas
@@ -200,6 +201,7 @@ CREATE TABLE imagen_clinica (
 );
 CREATE INDEX idx_imagen_paciente ON imagen_clinica (id_paciente);
 CREATE INDEX idx_imagen_atencion ON imagen_clinica (id_atencion);
+CREATE UNIQUE INDEX uq_imagen_clave ON imagen_clinica (url_almacenamiento);
 
 -- ---------------------------------------------------------------------------
 -- Auditoría (requisito de seguridad)

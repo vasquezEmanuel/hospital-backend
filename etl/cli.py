@@ -1,8 +1,8 @@
 """Línea de comandos del ETL. Carpeta: etl/ — Sprint 2, Fase 3 del documento técnico.
 
 Uso (desde la raíz del repo, con el entorno virtual activo y la base de datos en marcha):
-    python -m etl.cli catalogo  RUTA_DEL_CATALOGO.xlsx      # primero el catálogo CIE-10
-    python -m etl.cli atenciones RUTA_DE_ATENCIONES.xlsx    # después la hoja de atenciones
+    python -m etl.cli catalogo  RUTA_DEL_CATALOGO.xls       # primero el catálogo CIE-10 (XLS, XLSX o CSV)
+    python -m etl.cli atenciones RUTA_DE_ATENCIONES.xls     # después la hoja de atenciones
 La base de datos destino sale de DATABASE_URL (archivo .env).
 """
 
@@ -17,9 +17,9 @@ from etl.cargador import ResultadoCarga, cargar_atenciones, cargar_catalogo
 from etl.comunes import ErrorFormato
 
 
-def ejecutar(comando: str, archivo: str, db: Session) -> ResultadoCarga:
+def ejecutar(comando: str, archivo: str, db: Session, herencia_categoria: bool = True) -> ResultadoCarga:
     if comando == "catalogo":
-        return cargar_catalogo(db, archivo)
+        return cargar_catalogo(db, archivo, herencia_categoria)
     if comando == "atenciones":
         return cargar_atenciones(db, archivo)
     raise ValueError(f"Comando desconocido: {comando}")
@@ -28,14 +28,19 @@ def ejecutar(comando: str, archivo: str, db: Session) -> ResultadoCarga:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m etl.cli", description="Importador de datos del hospital.")
     parser.add_argument("comando", choices=("catalogo", "atenciones"))
-    parser.add_argument("archivo", help="Ruta del archivo XLSX o CSV")
+    parser.add_argument("archivo", help="Ruta del archivo XLS, XLSX o CSV")
+    parser.add_argument(
+        "--solo-filas-marcadas",
+        action="store_true",
+        help="catalogo: marcar como odontológicos solo los códigos resaltados, sin extender la marca a su categoría",
+    )
     args = parser.parse_args(argv)
 
     engine = get_engine()
     print(f"Base de datos destino: {engine.url.render_as_string(hide_password=True)}")
     try:
         with Session(engine) as db:
-            resultado = ejecutar(args.comando, args.archivo, db)
+            resultado = ejecutar(args.comando, args.archivo, db, not args.solo_filas_marcadas)
     except (ErrorFormato, FileNotFoundError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

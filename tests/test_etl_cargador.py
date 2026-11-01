@@ -44,11 +44,11 @@ def test_atenciones_sin_catalogo_pide_cargarlo_primero(db, atenciones_xlsx):
 
 def test_atenciones_carga_lo_valido_y_manda_el_resto_a_revision(db, catalogo, atenciones_xlsx):
     r = cargar_atenciones(db, atenciones_xlsx)
-    assert (r.total, r.insertados, r.omitidos, r.rechazados) == (12, 6, 1, 5)
-    assert (r.pacientes_nuevos, r.aseguradoras_nuevas) == (5, 4)
-    assert _uno(db, "SELECT count(*) FROM atencion") == 6
+    assert (r.total, r.insertados, r.omitidos, r.rechazados) == (12, 7, 1, 4)
+    assert (r.pacientes_nuevos, r.aseguradoras_nuevas, r.bucales_sin_codigo) == (6, 4, 1)
+    assert _uno(db, "SELECT count(*) FROM atencion") == 7
     assert _uno(db, "SELECT count(*) FROM diagnostico_hospitalario") == 4
-    assert _uno(db, "SELECT count(*) FROM diagnostico_bucal") == 7
+    assert _uno(db, "SELECT count(*) FROM diagnostico_bucal") == 8
     assert (
         _uno(db, "SELECT count(*) FROM cie10_x_diagnostico_bucal") == 8
     )  # "K021, K051" son 2 códigos de 1 diagnóstico
@@ -60,18 +60,20 @@ def test_la_cola_de_revision_conserva_la_fila_original_y_no_deja_datos_a_medias(
         text("SELECT numero_fila, estado, motivo FROM importacion_fila WHERE id_importacion = :i ORDER BY numero_fila"),
         {"i": r.id_importacion},
     ).all()
-    assert [f.numero_fila for f in filas] == [9, 10, 11, 12, 13] and {f.estado for f in filas} == {"revision"}
+    assert [f.numero_fila for f in filas] == [9, 10, 12, 13] and {f.estado for f in filas} == {"revision"}
     motivos = {f.numero_fila: f.motivo for f in filas}
     assert "Documento de identidad inválido" in motivos[9]
     assert "Fecha de la atención no reconocida" in motivos[10]
-    assert "sin coincidencia en el catálogo CIE-10: 'caries??'" in motivos[11]
     assert "C187 no está marcado como odontológico" in motivos[12]  # regla 2
     assert "ZZZ9" in motivos[13]
-    original = _uno(db, "SELECT datos->>'4:NOMBRE' FROM importacion_fila WHERE numero_fila = 11")
-    assert original == "Pedro Pérez"
+    original = _uno(db, "SELECT datos->>'4:NOMBRE' FROM importacion_fila WHERE numero_fila = 12")
+    assert original == "Sofía Ruiz"
     # una fila en revisión no crea nada: ni siquiera el paciente
     assert (
-        _uno(db, "SELECT count(*) FROM paciente WHERE documento_identidad IN ('98765432', '1020304050', '71234567')")
+        _uno(
+            db,
+            "SELECT count(*) FROM paciente WHERE documento_identidad IN ('12', '55667788', '1020304050', '71234567')",
+        )
         == 0
     )
 
@@ -79,9 +81,20 @@ def test_la_cola_de_revision_conserva_la_fila_original_y_no_deja_datos_a_medias(
 def test_cargar_dos_veces_la_misma_hoja_no_duplica_atenciones(db, catalogo, atenciones_xlsx):
     cargar_atenciones(db, atenciones_xlsx)
     otra = cargar_atenciones(db, atenciones_xlsx)
-    assert (otra.insertados, otra.omitidos, otra.rechazados) == (0, 7, 5)
-    assert _uno(db, "SELECT count(*) FROM atencion") == 6
-    assert _uno(db, "SELECT count(*) FROM paciente") == 5
+    assert (otra.insertados, otra.omitidos, otra.rechazados) == (0, 8, 4)
+    assert _uno(db, "SELECT count(*) FROM atencion") == 7
+    assert _uno(db, "SELECT count(*) FROM paciente") == 6
+
+
+def test_diagnostico_bucal_en_texto_libre_se_guarda_sin_codigo(db, catalogo, atenciones_xlsx):
+    cargar_atenciones(db, atenciones_xlsx)  # "caries??" no es un código ni una descripción del catálogo
+    sin_codigo = db.execute(
+        text(
+            "SELECT b.descripcion FROM diagnostico_bucal b "
+            "LEFT JOIN cie10_x_diagnostico_bucal x USING (id_diagnostico_bucal) WHERE x.cod_4 IS NULL"
+        )
+    ).scalars()
+    assert list(sin_codigo) == ["caries??"]  # nunca se pierde el texto original; queda pendiente de codificar
 
 
 def test_aseguradora_se_empareja_sin_importar_mayusculas_ni_espacios(db, catalogo, atenciones_xlsx):

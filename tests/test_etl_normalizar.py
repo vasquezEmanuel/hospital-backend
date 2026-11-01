@@ -41,3 +41,14 @@ def test_parsear_fecha_invalida():
         parsear_fecha("31/02/2026")
     with pytest.raises(ValueError):
         parsear_fecha("ayer")
+
+
+def test_parsear_fecha_numero_de_serie_de_excel():
+    assert parsear_fecha(46277.0) == date(2026, 9, 12)
+    with pytest.raises(ValueError):
+        parsear_fecha(12.0)  # un número chico no es una fecha
+
+
+def test_limpiar_codigo_quita_la_marca_de_doble_clasificacion():
+    assert limpiar_codigo_cie10("A065†") == "A065"
+    assert limpiar_codigo_cie10(" k02.1 ") == "K021"

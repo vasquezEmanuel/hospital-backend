@@ -9,3 +9,6 @@ coverage.xml
 openapi.json
 site/
 datos_demo/
+datos_reales/
+*.xls
+almacen_local/

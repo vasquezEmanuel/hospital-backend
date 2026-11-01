@@ -40,7 +40,8 @@ _R1 = [datetime(2026, 9, 12), "SURA", "1.025.847.210", "María Rodríguez", "Con
        "Gingivitis aguda", None, "Operatoria · RX · CP · DTT", "Dra. Laura Castaño",
        "Paciente tolera el procedimiento sin complicaciones."]  # fmt: skip
 
-# Cada fila ilustra un caso: las 5 últimas con problema deben ir a la cola de revisión.
+# Cada fila ilustra un caso. Las filas 9, 10, 12 y 13 del archivo van a la cola de revisión; la 11 ("caries??") se
+# carga con el diagnóstico bucal solo como texto, pendiente de codificar.
 ATENCIONES_DEMO = [
     _R1,
     ["11/09/2026", "Nueva EPS", 79421880, "Carlos Gómez", "Hospitalización piso 4",
