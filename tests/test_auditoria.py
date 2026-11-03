@@ -67,7 +67,7 @@ def test_cada_ruta_de_datos_de_pacientes_declara_el_auditor():
     assert sin_auditor == []
 
 
-def test_consultas_y_cambios_de_pacientes_quedan_registrados_sin_datos_clinicos(client, seed, db):
+def test_consultas_y_cambios_de_pacientes_quedan_registrados_sin_datos_clinicos(client, seed, db, almacen):
     maria = seed["maria"].id_paciente
     client.get("/api/v1/pacientes", params={"q": "maria", "sexo": "F"})
     client.get(f"/api/v1/pacientes/{maria}")
@@ -157,7 +157,7 @@ def test_la_auditoria_solo_la_ve_el_administrador(con_roles, anon_client):
     assert con_roles("administrador", sub="auth|admin").get("/api/v1/auditoria").status_code == 200
 
 
-def test_consultar_la_auditoria_filtra_pagina_y_tambien_queda_registrada(con_roles, seed, db):
+def test_consultar_la_auditoria_filtra_pagina_y_tambien_queda_registrada(con_roles, seed, db, almacen):
     maria, carlos = seed["maria"].id_paciente, seed["carlos"].id_paciente
     db.add(Profesional(nombre="Dra. Laura Castaño", identificacion="1", correo="l@h.test", auth_id="auth|dra"))
     db.flush()
