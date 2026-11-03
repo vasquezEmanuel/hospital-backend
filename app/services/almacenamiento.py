@@ -16,7 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 
 
 class Almacenamiento(Protocol):
@@ -81,14 +81,31 @@ class AlmacenamientoS3:
         )
 
 
+def crear_cliente_s3(s: Settings):
+    """Cliente S3 del proveedor configurado. Con un endpoint propio (Supabase Storage, R2, MinIO...) se usa
+    direccionamiento por ruta (/bucket/clave), que es el que esos proveedores exigen, y firma SigV4."""
+    import boto3  # solo se necesita en producción
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=s.storage_endpoint_url or None,
+        region_name=s.storage_region or None,
+        # Si las claves están vacías, boto3 usa AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY o el rol de la plataforma.
+        aws_access_key_id=s.storage_access_key_id or None,
+        aws_secret_access_key=s.storage_secret_access_key or None,
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": "path" if s.storage_endpoint_url else "auto"},
+        ),
+    )
+
+
 @lru_cache
 def get_almacenamiento() -> Almacenamiento:
     s = get_settings()
     if s.storage_backend == "s3":
-        import boto3  # solo se necesita en producción
-
-        cliente = boto3.client(
-            "s3", endpoint_url=s.storage_endpoint_url or None, region_name=s.storage_region or None
-        )  # credenciales: variables AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY o rol de la plataforma
-        return AlmacenamientoS3(s.storage_bucket, cliente)
+        if not s.storage_bucket:
+            raise RuntimeError("Con STORAGE_BACKEND=s3 defina STORAGE_BUCKET (nombre del bucket).")
+        return AlmacenamientoS3(s.storage_bucket, crear_cliente_s3(s))
     return AlmacenamientoLocal(s.storage_local_dir, s.storage_signing_secret or s.auth_jwt_secret, s.public_base_url)

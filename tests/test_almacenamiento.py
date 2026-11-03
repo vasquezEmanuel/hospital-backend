@@ -86,7 +86,15 @@ def test_s3_guarda_y_firma_con_el_cliente_del_proveedor():
 @pytest.fixture
 def entorno_limpio(monkeypatch):
     """Cada prueba parte sin cachés y deja todo como estaba."""
-    for var in ("STORAGE_BACKEND", "STORAGE_LOCAL_DIR", "STORAGE_BUCKET", "STORAGE_ENDPOINT_URL", "STORAGE_REGION"):
+    for var in (
+        "STORAGE_BACKEND",
+        "STORAGE_LOCAL_DIR",
+        "STORAGE_BUCKET",
+        "STORAGE_ENDPOINT_URL",
+        "STORAGE_REGION",
+        "STORAGE_ACCESS_KEY_ID",
+        "STORAGE_SECRET_ACCESS_KEY",
+    ):
         monkeypatch.delenv(var, raising=False)
     get_settings.cache_clear()
     get_almacenamiento.cache_clear()
@@ -113,9 +121,39 @@ def test_fabrica_crea_el_cliente_s3_con_el_endpoint_configurado(entorno_limpio):
     entorno_limpio.setenv("STORAGE_BACKEND", "s3")
     entorno_limpio.setenv("STORAGE_BUCKET", "imagenes-hospital")
     entorno_limpio.setenv("STORAGE_ENDPOINT_URL", "https://r2.example.com")
+    entorno_limpio.setenv("STORAGE_REGION", "us-east-1")
+    entorno_limpio.setenv("STORAGE_ACCESS_KEY_ID", "clave-id")
+    entorno_limpio.setenv("STORAGE_SECRET_ACCESS_KEY", "clave-secreta")
     almacen = get_almacenamiento()
     assert isinstance(almacen, AlmacenamientoS3) and almacen.bucket == "imagenes-hospital"
-    assert recibido == {"servicio": "s3", "endpoint_url": "https://r2.example.com", "region_name": None}
+    config = recibido.pop("config")
+    assert config.signature_version == "s3v4" and config.s3 == {"addressing_style": "path"}
+    assert recibido == {
+        "servicio": "s3",
+        "endpoint_url": "https://r2.example.com",
+        "region_name": "us-east-1",
+        "aws_access_key_id": "clave-id",
+        "aws_secret_access_key": "clave-secreta",
+    }
+
+
+def test_s3_sin_bucket_falla_con_un_mensaje_claro(entorno_limpio):
+    entorno_limpio.setenv("STORAGE_BACKEND", "s3")
+    with pytest.raises(RuntimeError, match="STORAGE_BUCKET"):
+        get_almacenamiento()
+
+
+def test_s3_con_cliente_real_firma_en_estilo_de_ruta_y_vence(entorno_limpio):
+    """Sin red: boto3 firma localmente. Así se comprueba la forma del enlace que recibirá el navegador."""
+    entorno_limpio.setenv("STORAGE_BACKEND", "s3")
+    entorno_limpio.setenv("STORAGE_BUCKET", "imagenes")
+    entorno_limpio.setenv("STORAGE_ENDPOINT_URL", "https://abc.storage.supabase.co/storage/v1/s3")
+    entorno_limpio.setenv("STORAGE_REGION", "us-east-1")
+    entorno_limpio.setenv("STORAGE_ACCESS_KEY_ID", "id-de-prueba")
+    entorno_limpio.setenv("STORAGE_SECRET_ACCESS_KEY", "secreto-de-prueba")
+    url = get_almacenamiento().url_firmada("pacientes/1/foto.png", 300)
+    assert url.startswith("https://abc.storage.supabase.co/storage/v1/s3/imagenes/pacientes/1/foto.png?")
+    assert "X-Amz-Expires=300" in url and "X-Amz-Signature=" in url and "X-Amz-Algorithm=AWS4-HMAC-SHA256" in url
 
 
 def test_esquemas_de_imagen_y_expediente_validan_una_respuesta_minima():

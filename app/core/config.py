@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     storage_bucket: str = ""
     storage_endpoint_url: str = ""  # vacío = AWS; con valor = otro proveedor compatible con S3
     storage_region: str = ""
+    storage_access_key_id: str = ""  # claves del almacenamiento S3 (Supabase: Storage > S3 > New access key)
+    storage_secret_access_key: str = ""
     storage_signing_secret: str = ""  # firma los enlaces del almacenamiento local; si falta, se usa auth_jwt_secret
     signed_url_ttl_seconds: int = 300  # regla 7: el acceso a imágenes es solo por enlaces temporales firmados
     max_upload_mb: int = 15
