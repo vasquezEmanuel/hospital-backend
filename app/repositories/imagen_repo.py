@@ -107,6 +107,18 @@ def por_paciente(db: Session, id_paciente: int) -> list[FilaImagen]:
     return [tuple(f) for f in filas]
 
 
+def por_pacientes(db: Session, ids_paciente: list[int]) -> list[FilaImagen]:
+    """Imágenes activas de varios pacientes de una sola vez (búsqueda por enfermedad), lo más reciente primero."""
+    if not ids_paciente:
+        return []
+    filas = db.execute(
+        _base()
+        .where(ImagenClinica.id_paciente.in_(ids_paciente))
+        .order_by(ImagenClinica.fecha_carga.desc(), ImagenClinica.id_imagen.desc())
+    ).all()
+    return [tuple(f) for f in filas]
+
+
 def existe_checksum(db: Session, id_paciente: int, checksum: str) -> bool:
     return (
         db.scalar(

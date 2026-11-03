@@ -1,4 +1,5 @@
 from app.models.atencion import Atencion
+from app.models.auditoria import Auditoria
 from app.models.catalogos import Aseguradora, Profesional
 from app.models.cie10 import Cie10
 from app.models.diagnostico import DiagnosticoBucal, DiagnosticoHospitalario
@@ -8,6 +9,7 @@ from app.models.paciente import Paciente
 __all__ = [
     "Aseguradora",
     "Atencion",
+    "Auditoria",
     "Cie10",
     "DiagnosticoBucal",
     "DiagnosticoHospitalario",

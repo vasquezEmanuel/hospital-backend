@@ -8,13 +8,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import archivos, cie10, expediente, health, imagenes, pacientes
+from app.routers import archivos, auditoria, cie10, enfermedades, expediente, health, imagenes, pacientes
 
 DESCRIPCION = """
 API del **Sistema de Gestión de Pacientes, Enfermedades e Imágenes Clínicas** — Hospital Alma Mater, Odontología.
 
 Autenticación: `Authorization: Bearer <JWT del proveedor de identidad>`.
-Roles requeridos: `odontologo` o `administrador`.
+Roles requeridos: `odontologo` o `administrador`; la auditoría (`/auditoria`) es solo para `administrador`.
 """
 
 
@@ -41,6 +41,8 @@ def create_app() -> FastAPI:
     app.include_router(imagenes.router, prefix="/api/v1")
     app.include_router(archivos.router, prefix="/api/v1")
     app.include_router(cie10.router, prefix="/api/v1")
+    app.include_router(enfermedades.router, prefix="/api/v1")
+    app.include_router(auditoria.router, prefix="/api/v1")
     return app
 
 

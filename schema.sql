@@ -1,10 +1,11 @@
 -- ============================================================================
--- Esquema v1.3 — Sistema de Gestión de Pacientes, Enfermedades e
+-- Esquema v1.4 — Sistema de Gestión de Pacientes, Enfermedades e
 -- Imágenes Clínicas — Hospital Alma Mater, Área de Odontología.
 -- Motor: PostgreSQL 16
 -- v1.1: ajustes tras contrastar el front (ver alembic/versions/0002_ajustes_front.py).
 -- v1.2: tratamientos, cola de revisión del importador, aseguradora.activo (ver alembic/versions/0003_*.py).
 -- v1.3: clave de almacenamiento única en imagen_clinica (ver alembic/versions/0004_*.py).
+-- v1.4: auditoría completa e inmutable (regla 6) (ver alembic/versions/0005_*.py).
 --       La línea base v1.0 vive intacta en alembic/sql/0001_baseline.sql.
 -- ============================================================================
 
@@ -209,13 +210,35 @@ CREATE UNIQUE INDEX uq_imagen_clave ON imagen_clinica (url_almacenamiento);
 
 CREATE TABLE auditoria (
     id_evento       BIGSERIAL PRIMARY KEY,
-    id_profesional  INTEGER NOT NULL REFERENCES profesional (id_profesional),
+    id_profesional  INTEGER REFERENCES profesional (id_profesional),  -- v1.4: NULL si quien actúa no tiene fila en profesional
     accion          VARCHAR(100) NOT NULL,
     entidad_afectada VARCHAR(100),
     fecha_hora      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    ip_origen       VARCHAR(45)
+    ip_origen       VARCHAR(45),
+    auth_sub        VARCHAR(255),   -- v1.4: identificador del usuario en el IdP (claim "sub"); siempre quién actuó
+    email           VARCHAR(150),   -- v1.4: correo del token, solo informativo
+    id_paciente     INTEGER,        -- v1.4: paciente consultado o modificado. Sin FK a propósito: el registro es independiente
+    detalle         JSONB,          -- v1.4: contexto sin datos clínicos (nombres de filtros usados, identificadores)
+    CONSTRAINT ck_auditoria_actor CHECK (id_profesional IS NOT NULL OR auth_sub IS NOT NULL)
 );
 CREATE INDEX idx_auditoria_profesional ON auditoria (id_profesional);
 CREATE INDEX idx_auditoria_fecha ON auditoria (fecha_hora);
+CREATE INDEX idx_auditoria_paciente ON auditoria (id_paciente);
+
+-- v1.4: la auditoría es inmutable. Nadie (ni la propia API) puede modificar, borrar ni vaciar un evento.
+CREATE OR REPLACE FUNCTION fn_auditoria_inmutable()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'La auditoria es inmutable: no se permite modificarla ni borrarla';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_auditoria_inmutable
+BEFORE UPDATE OR DELETE ON auditoria
+FOR EACH ROW EXECUTE FUNCTION fn_auditoria_inmutable();
+
+CREATE TRIGGER trg_auditoria_sin_truncate
+BEFORE TRUNCATE ON auditoria
+FOR EACH STATEMENT EXECUTE FUNCTION fn_auditoria_inmutable();
 
 COMMIT;

@@ -1,7 +1,8 @@
 """Recurso /imagenes. Carpeta: app/routers — Sprint 3.
 
 Pantalla 'Imágenes clínicas' (listado con filtros paciente / diagnóstico / fecha, 'Subir imagen', 'Ver imagen').
-Reglas: 4 (siempre asociada al paciente), 5 (se inactiva, no se borra) y 7 (solo enlaces firmados temporales).
+Reglas: 4 (siempre asociada al paciente), 5 (se inactiva, no se borra), 6 (todo acceso o cambio queda en auditoría
+antes de ejecutarse) y 7 (solo enlaces firmados temporales).
 """
 
 from datetime import date
@@ -12,9 +13,10 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.security import require_clinical_staff
 from app.db.session import get_db
+from app.middleware.auditoria import Auditor, get_auditor
 from app.schemas.common import ErrorResponse, Page
 from app.schemas.imagen import ImagenOut
-from app.services import imagen_service
+from app.services import auditoria_service, imagen_service
 from app.services.almacenamiento import Almacenamiento, get_almacenamiento
 from app.services.errors import (
     ArchivoMuyGrandeError,
@@ -44,7 +46,21 @@ def listar_imagenes(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     almacen: Almacenamiento = Depends(get_almacenamiento),
+    auditor: Auditor = Depends(get_auditor),
 ):
+    auditor.registrar(
+        "consultar_imagenes",
+        "imagen",
+        id_paciente=id_paciente,
+        detalle=auditoria_service.filtros_usados(
+            id_paciente=id_paciente,
+            id_atencion=id_atencion,
+            q=q,
+            diagnostico=diagnostico,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+        ),
+    )
     return imagen_service.listar(
         db,
         almacen,
@@ -80,7 +96,9 @@ def subir_imagen(
     db: Session = Depends(get_db),
     almacen: Almacenamiento = Depends(get_almacenamiento),
     settings: Settings = Depends(get_settings),
+    auditor: Auditor = Depends(get_auditor),
 ):
+    auditor.registrar("subir_imagen", "imagen", id_paciente=id_paciente)
     # Se lee un byte más que el máximo para detectar el exceso sin cargar archivos enormes en memoria.
     contenido = archivo.file.read(settings.max_upload_mb * 1024 * 1024 + 1)
     try:
@@ -115,7 +133,9 @@ def obtener_imagen(
     id_imagen: int,
     db: Session = Depends(get_db),
     almacen: Almacenamiento = Depends(get_almacenamiento),
+    auditor: Auditor = Depends(get_auditor),
 ):
+    auditor.registrar("consultar_imagen", "imagen", id_imagen=id_imagen)
     try:
         return imagen_service.obtener(db, almacen, id_imagen)
     except NotFoundError as exc:
@@ -128,7 +148,8 @@ def obtener_imagen(
     summary="Inactivar una imagen (borrado lógico: el archivo y su registro se conservan)",
     responses={404: {"model": ErrorResponse}},
 )
-def inactivar_imagen(id_imagen: int, db: Session = Depends(get_db)):
+def inactivar_imagen(id_imagen: int, db: Session = Depends(get_db), auditor: Auditor = Depends(get_auditor)):
+    auditor.registrar("inactivar_imagen", "imagen", id_imagen=id_imagen)
     try:
         imagen_service.inactivar(db, id_imagen)
     except NotFoundError as exc:

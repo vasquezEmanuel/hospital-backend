@@ -98,3 +98,13 @@ def require_clinical_staff(
     if not user.roles.intersection({settings.role_odontologo, settings.role_administrador}):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Rol insuficiente para esta operación")
     return user
+
+
+def require_admin(
+    user: CurrentUser = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> CurrentUser:
+    """Solo administrador (p. ej. consultar la auditoría). El rol llega en el token del proveedor de identidad."""
+    if settings.role_administrador not in user.roles:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Se requiere el rol de administrador")
+    return user

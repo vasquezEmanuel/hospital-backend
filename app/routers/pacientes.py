@@ -1,7 +1,8 @@
 """Recurso /pacientes. Carpeta: app/routers — Sprint 1.
 
 Pantallas: 'Pacientes' (lista + filtros), 'Nuevo paciente', ficha del paciente / 'Editar información'.
-Reglas: 1 (documento único). El expediente completo (/expediente) llega en Sprint 3.
+Reglas: 1 (documento único) y 6 (toda consulta o modificación queda en auditoría, antes de ejecutarse).
+El expediente completo está en routers/expediente.py.
 """
 
 from datetime import date
@@ -11,9 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.core.security import require_clinical_staff
 from app.db.session import get_db
+from app.middleware.auditoria import Auditor, get_auditor
 from app.schemas.common import ErrorResponse, Page
 from app.schemas.paciente import PacienteCreate, PacienteListItem, PacienteOut, PacienteUpdate, Sexo
-from app.services import paciente_service
+from app.services import auditoria_service, paciente_service
 from app.services.errors import ConflictError, NotFoundError
 
 router = APIRouter(
@@ -34,7 +36,15 @@ def listar_pacientes(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    auditor: Auditor = Depends(get_auditor),
 ):
+    auditor.registrar(
+        "consultar_pacientes",
+        "paciente",
+        detalle=auditoria_service.filtros_usados(
+            q=q, documento=documento, sexo=sexo, fecha_desde=fecha_desde, fecha_hasta=fecha_hasta
+        ),
+    )
     return paciente_service.listar(
         db,
         q=q,
@@ -54,7 +64,8 @@ def listar_pacientes(
     summary="Registrar paciente",
     responses={409: {"model": ErrorResponse, "description": "El documento ya está registrado"}},
 )
-def crear_paciente(datos: PacienteCreate, db: Session = Depends(get_db)):
+def crear_paciente(datos: PacienteCreate, db: Session = Depends(get_db), auditor: Auditor = Depends(get_auditor)):
+    auditor.registrar("crear_paciente", "paciente")
     try:
         return paciente_service.crear(db, datos)
     except ConflictError as exc:
@@ -67,7 +78,8 @@ def crear_paciente(datos: PacienteCreate, db: Session = Depends(get_db)):
     summary="Ficha del paciente",
     responses={404: {"model": ErrorResponse}},
 )
-def obtener_paciente(id_paciente: int, db: Session = Depends(get_db)):
+def obtener_paciente(id_paciente: int, db: Session = Depends(get_db), auditor: Auditor = Depends(get_auditor)):
+    auditor.registrar("consultar_paciente", "paciente", id_paciente=id_paciente)
     try:
         return paciente_service.obtener(db, id_paciente)
     except NotFoundError as exc:
@@ -80,7 +92,18 @@ def obtener_paciente(id_paciente: int, db: Session = Depends(get_db)):
     summary="Editar información del paciente (el documento no es editable)",
     responses={404: {"model": ErrorResponse}},
 )
-def editar_paciente(id_paciente: int, datos: PacienteUpdate, db: Session = Depends(get_db)):
+def editar_paciente(
+    id_paciente: int,
+    datos: PacienteUpdate,
+    db: Session = Depends(get_db),
+    auditor: Auditor = Depends(get_auditor),
+):
+    auditor.registrar(
+        "editar_paciente",
+        "paciente",
+        id_paciente=id_paciente,
+        detalle={"campos": sorted(datos.model_dump(exclude_unset=True))},  # nombres de campos, nunca valores
+    )
     try:
         return paciente_service.actualizar(db, id_paciente, datos)
     except NotFoundError as exc:

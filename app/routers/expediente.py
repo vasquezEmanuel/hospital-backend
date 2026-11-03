@@ -1,7 +1,7 @@
 """Expediente del paciente: GET /pacientes/{id}/expediente. Carpeta: app/routers — Sprint 3.
 
 Pantalla de detalle del paciente / 'Detalle de atención' ('Ver imágenes'). Búsqueda por paciente -> enfermedades e
-imágenes. Auditoría de la consulta (regla 6): Sprint 4.
+imágenes. Regla 6: la consulta queda en auditoría antes de entregar el expediente.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import require_clinical_staff
 from app.db.session import get_db
+from app.middleware.auditoria import Auditor, get_auditor
 from app.schemas.common import ErrorResponse
 from app.schemas.expediente import ExpedienteOut
 from app.services import expediente_service
@@ -33,7 +34,9 @@ def obtener_expediente(
     id_paciente: int,
     db: Session = Depends(get_db),
     almacen: Almacenamiento = Depends(get_almacenamiento),
+    auditor: Auditor = Depends(get_auditor),
 ):
+    auditor.registrar("consultar_expediente", "paciente", id_paciente=id_paciente)
     try:
         return expediente_service.obtener(db, almacen, id_paciente)
     except NotFoundError as exc:
