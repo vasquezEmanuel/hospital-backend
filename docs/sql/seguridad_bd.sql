@@ -1,0 +1,72 @@
+-- ============================================================================
+-- Seguridad de la base de datos (Sprint 5) — permisos mínimos para la API.
+-- Ejecutar en Supabase (SQL Editor) con el usuario postgres, DESPUÉS de las migraciones.
+-- Es idempotente: se puede repetir (hay que repetirlo cuando una migración cree tablas nuevas o cuando un sprint
+-- agregue escrituras nuevas a la API; ver "ESCRITURAS DE LA API" más abajo).
+--
+-- ANTES de ejecutarlo: cambie CAMBIAR_ESTA_CONTRASENA por una contraseña larga de solo letras y números.
+-- Si el rol ya existe, la contraseña NO se toca (cámbiela con ALTER ROLE hospital_api PASSWORD '...').
+--
+-- Qué consigue: la API se conecta como `hospital_api`, que NO puede borrar filas, vaciar tablas, modificar el
+-- esquema, ni tocar la auditoría más que insertando. Si alguien robara las credenciales de la API, el daño posible
+-- sería mucho menor que con `postgres`. Las migraciones y el ETL siguen corriendo con el usuario propietario.
+-- ============================================================================
+
+-- 1) Rol de la API (sin privilegios especiales; sujeto a RLS).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'hospital_api') THEN
+    CREATE ROLE hospital_api LOGIN PASSWORD 'CAMBIAR_ESTA_CONTRASENA'
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+END $$;
+
+GRANT USAGE ON SCHEMA public TO hospital_api;
+
+-- 2) Privilegios por tabla. Se parte de cero y se concede lo mínimo.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM hospital_api;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM hospital_api;
+
+-- Lectura de todo lo de negocio (menos alembic_version, que solo usan las migraciones).
+DO $$ DECLARE t text; BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'alembic_version' LOOP
+    EXECUTE format('GRANT SELECT ON public.%I TO hospital_api', t);
+  END LOOP;
+END $$;
+
+-- ESCRITURAS DE LA API (hoy): pacientes e imágenes se crean y modifican; la auditoría solo se inserta.
+-- Cuando un sprint agregue escrituras (p. ej. atenciones en el Sprint 7), se añaden aquí y en la sección 4.
+GRANT INSERT, UPDATE ON public.paciente, public.imagen_clinica TO hospital_api;
+GRANT INSERT ON public.auditoria TO hospital_api;
+GRANT USAGE ON SEQUENCE public.paciente_id_paciente_seq,
+                        public.imagen_clinica_id_imagen_seq,
+                        public.auditoria_id_evento_seq TO hospital_api;
+-- Nunca se concede DELETE ni TRUNCATE: el borrado es lógico (regla 5) y la auditoría es inmutable (regla 6).
+
+-- 3) Row Level Security: activada en TODAS las tablas. Sin políticas, nadie la atraviesa (ni la API pública de
+--    Supabase); el usuario postgres la ignora, y hospital_api solo pasa por las políticas de la sección 4.
+DO $$ DECLARE t text; BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+  END LOOP;
+END $$;
+
+-- 4) Políticas de hospital_api (solo lo que sus privilegios ya permiten).
+DO $$ DECLARE t text; BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'alembic_version' LOOP
+    EXECUTE format('DROP POLICY IF EXISTS api_leer ON public.%I', t);
+    EXECUTE format('CREATE POLICY api_leer ON public.%I FOR SELECT TO hospital_api USING (true)', t);
+  END LOOP;
+END $$;
+
+DROP POLICY IF EXISTS api_insertar ON public.paciente;
+CREATE POLICY api_insertar ON public.paciente FOR INSERT TO hospital_api WITH CHECK (true);
+DROP POLICY IF EXISTS api_actualizar ON public.paciente;
+CREATE POLICY api_actualizar ON public.paciente FOR UPDATE TO hospital_api USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS api_insertar ON public.imagen_clinica;
+CREATE POLICY api_insertar ON public.imagen_clinica FOR INSERT TO hospital_api WITH CHECK (true);
+DROP POLICY IF EXISTS api_actualizar ON public.imagen_clinica;
+CREATE POLICY api_actualizar ON public.imagen_clinica FOR UPDATE TO hospital_api USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS api_insertar ON public.auditoria;
+CREATE POLICY api_insertar ON public.auditoria FOR INSERT TO hospital_api WITH CHECK (true);

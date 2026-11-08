@@ -20,6 +20,8 @@ Roles requeridos: `odontologo` o `administrador`; la auditoría (`/auditoria`) e
 
 def create_app() -> FastAPI:
     s = get_settings()
+    if s.environment == "production" and (problemas := s.problemas_produccion()):
+        raise RuntimeError("Configuración insegura para producción: " + "; ".join(problemas))
     app = FastAPI(
         title=s.app_name,
         version="0.1.0",

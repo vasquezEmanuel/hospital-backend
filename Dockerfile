@@ -16,6 +16,7 @@ USER appuser
 
 EXPOSE 8000
 # $PORT lo define la plataforma (Render/Cloud Run); 8000 por defecto en local.
-# Primero se aplican las migraciones (idempotente: si ya están al día no hace nada) y luego arranca la API.
+# Las migraciones corren con MIGRATIONS_DATABASE_URL (usuario propietario) y la API con DATABASE_URL (usuario
+# restringido hospital_api, Sprint 5). Si MIGRATIONS_DATABASE_URL no está definida, se usa DATABASE_URL.
 # Con una sola instancia es seguro; con varias, migrar desde un paso de despliegue aparte.
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "DATABASE_URL=\"${MIGRATIONS_DATABASE_URL:-$DATABASE_URL}\" alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]

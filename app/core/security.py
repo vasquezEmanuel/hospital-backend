@@ -22,6 +22,7 @@ class CurrentUser:
     sub: str  # profesional.auth_id
     email: str | None = None
     roles: frozenset[str] = field(default_factory=frozenset)
+    aal: str | None = None  # nivel de autenticación del token: aal1 (contraseña) | aal2 (con segundo factor)
 
 
 def _resolve_path(payload: dict, path: str):
@@ -44,6 +45,11 @@ def _unauthorized(detail: str = "Credenciales inválidas o ausentes") -> HTTPExc
 
 def decode_token(token: str, settings: Settings) -> dict:
     algorithms = [a.strip() for a in settings.auth_algorithms.split(",") if a.strip()]
+    if settings.auth_jwks_url:
+        # Con claves públicas nunca se acepta HS*: evita que alguien firme un token con la propia clave pública.
+        algorithms = [a for a in algorithms if not a.upper().startswith("HS")]
+        if not algorithms:
+            raise _unauthorized("Autenticación mal configurada en el servidor")
     options = {"require": ["exp", "sub"]}
     kwargs: dict = {"algorithms": algorithms, "options": options}
     if settings.auth_audience:
@@ -73,10 +79,14 @@ def get_current_user(
     if creds is None:
         raise _unauthorized()
     payload = decode_token(creds.credentials, settings)
+    if settings.auth_require_mfa and payload.get("aal") != "aal2":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Se requiere verificación en dos pasos (MFA)")
     raw_roles = _resolve_path(payload, settings.auth_roles_claim) or []
     if isinstance(raw_roles, str):
         raw_roles = [raw_roles]
-    return CurrentUser(sub=payload["sub"], email=payload.get("email"), roles=frozenset(raw_roles))
+    return CurrentUser(
+        sub=payload["sub"], email=payload.get("email"), roles=frozenset(raw_roles), aal=payload.get("aal")
+    )
 
 
 def require_roles(*roles: str):
