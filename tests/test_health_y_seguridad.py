@@ -35,3 +35,26 @@ def test_decode_token_hs256_y_ruta_de_roles():
     s = Settings(auth_jwt_secret="s" * 40, auth_roles_claim="app_metadata.roles")
     tok = jwt.encode({"sub": "u1", "exp": 4102444800, "app_metadata": {"roles": ["odontologo"]}}, "s" * 40, "HS256")
     assert decode_token(tok, s)["sub"] == "u1"
+
+
+def test_ready_registra_la_causa_cuando_la_bd_falla(client, caplog):
+    """Si la BD no responde, el cliente recibe 503 y el log de Render dice por qué (usuario, contraseña, red...)."""
+    from sqlalchemy.exc import OperationalError
+
+    from app.db.session import get_db
+    from app.main import app
+
+    class _Caida:
+        def execute(self, *_):
+            raise OperationalError(
+                "SELECT 1", {}, Exception('FATAL: password authentication failed for user "hospital_api"')
+            )
+
+    app.dependency_overrides[get_db] = lambda: _Caida()
+    try:
+        with caplog.at_level("ERROR", logger="uvicorn.error"):
+            r = client.get("/health/ready")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+    assert r.status_code == 503 and r.json()["detail"] == "Base de datos no disponible"
+    assert "password authentication failed" in caplog.text
