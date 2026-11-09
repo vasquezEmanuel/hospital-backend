@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     auth_jwt_secret: str = ""  # HS256 (Supabase con secreto compartido) — alternativa a JWKS
     auth_algorithms: str = "RS256,ES256,HS256"
     auth_roles_claim: str = "groups"  # ruta con puntos, p. ej. "app_metadata.roles"
-    # Sprint 5: con True solo entran tokens con segundo factor verificado (claim "aal" = "aal2", Supabase Auth)
+    # Opcional y APAGADO por decisión del equipo: con True solo entran tokens con segundo factor (claim "aal" = "aal2")
     auth_require_mfa: bool = False
     role_odontologo: str = "odontologo"
     role_administrador: str = "administrador"
@@ -71,8 +71,6 @@ class Settings(BaseSettings):
             problemas.append("falta AUTH_ISSUER")
         if not self.auth_audience:
             problemas.append("falta AUTH_AUDIENCE")
-        if not self.auth_require_mfa:
-            problemas.append("AUTH_REQUIRE_MFA debe ser true")
         if self.storage_backend != "s3":
             problemas.append("STORAGE_BACKEND debe ser s3")
         if not self.cors_origin_list or "*" in self.cors_origin_list:
