@@ -156,7 +156,6 @@ def test_produccion_bien_configurada_no_tiene_problemas():
         ({"auth_jwks_url": ""}, "AUTH_JWKS_URL"),
         ({"auth_issuer": ""}, "AUTH_ISSUER"),
         ({"auth_audience": ""}, "AUTH_AUDIENCE"),
-        ({"auth_require_mfa": False}, "AUTH_REQUIRE_MFA"),
         ({"storage_backend": "local"}, "STORAGE_BACKEND"),
         ({"cors_origins": ""}, "CORS_ORIGINS"),
         ({"cors_origins": "*"}, "CORS_ORIGINS"),
@@ -167,8 +166,13 @@ def test_produccion_insegura_se_detecta(cambio, texto):
 
 
 def test_la_app_no_arranca_en_produccion_con_configuracion_insegura(monkeypatch):
-    monkeypatch.setattr("app.main.get_settings", lambda: _produccion(auth_require_mfa=False, docs_enabled=True))
+    monkeypatch.setattr("app.main.get_settings", lambda: _produccion(docs_enabled=True))
     with pytest.raises(RuntimeError, match="Configuración insegura"):
         create_app()
     monkeypatch.setattr("app.main.get_settings", lambda: _produccion())
     assert create_app().title
+
+
+def test_produccion_no_exige_mfa_por_decision_del_equipo():
+    """El segundo factor es opcional (AUTH_REQUIRE_MFA): su ausencia no impide arrancar en producción."""
+    assert _produccion(auth_require_mfa=False).problemas_produccion() == []
