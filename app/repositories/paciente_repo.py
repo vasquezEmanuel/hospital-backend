@@ -5,6 +5,7 @@ Soporta la búsqueda enfermedad↔paciente a futuro (índices sobre documento_id
 
 import re
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy import Select, exists, func, or_, select
 from sqlalchemy.orm import Session
@@ -74,7 +75,13 @@ def listar(
     return [(p, int(t), u) for p, t, u in rows], total
 
 
-def obtener(db: Session, id_paciente: int) -> Paciente | None:
+def obtener(db: Session, public_id: UUID) -> Paciente | None:
+    """Por identificador público (el que llega desde la API)."""
+    return db.scalar(select(Paciente).where(Paciente.public_id == public_id))
+
+
+def obtener_por_id_interno(db: Session, id_paciente: int) -> Paciente | None:
+    """Por clave interna: solo para procesos internos (indexación de imágenes, ETL); nunca desde la API."""
     return db.get(Paciente, id_paciente)
 
 

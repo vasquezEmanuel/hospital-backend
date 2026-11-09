@@ -6,6 +6,7 @@ El expediente completo está en routers/expediente.py.
 """
 
 from datetime import date
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -78,7 +79,7 @@ def crear_paciente(datos: PacienteCreate, db: Session = Depends(get_db), auditor
     summary="Ficha del paciente",
     responses={404: {"model": ErrorResponse}},
 )
-def obtener_paciente(id_paciente: int, db: Session = Depends(get_db), auditor: Auditor = Depends(get_auditor)):
+def obtener_paciente(id_paciente: UUID, db: Session = Depends(get_db), auditor: Auditor = Depends(get_auditor)):
     auditor.registrar("consultar_paciente", "paciente", id_paciente=id_paciente)
     try:
         return paciente_service.obtener(db, id_paciente)
@@ -93,7 +94,7 @@ def obtener_paciente(id_paciente: int, db: Session = Depends(get_db), auditor: A
     responses={404: {"model": ErrorResponse}},
 )
 def editar_paciente(
-    id_paciente: int,
+    id_paciente: UUID,
     datos: PacienteUpdate,
     db: Session = Depends(get_db),
     auditor: Auditor = Depends(get_auditor),

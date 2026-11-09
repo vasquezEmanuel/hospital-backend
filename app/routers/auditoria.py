@@ -4,6 +4,7 @@ Consulta del registro de auditoría (regla 6). Consultar la auditoría también 
 """
 
 from datetime import date
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -25,7 +26,9 @@ router = APIRouter(
 
 @router.get("", response_model=Page[AuditoriaOut], summary="Registro de auditoría (solo administrador)")
 def listar_auditoria(
-    id_paciente: int | None = Query(None, ge=1, description="Quién consultó o modificó a este paciente"),
+    id_paciente: UUID | None = Query(
+        None, description="Quién consultó o modificó a este paciente (identificador público)"
+    ),
     id_profesional: int | None = Query(None, ge=1, description="Acciones de este profesional registrado"),
     auth_sub: str | None = Query(
         None, max_length=255, description="Acciones de este usuario del proveedor de identidad"

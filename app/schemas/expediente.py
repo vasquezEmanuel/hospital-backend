@@ -4,6 +4,7 @@ Responde la búsqueda "por paciente -> enfermedades e imágenes" del problema qu
 """
 
 from datetime import date, datetime, time
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -23,14 +24,14 @@ class DiagnosticoHospitalarioOut(BaseModel):
 
 
 class DiagnosticoBucalOut(BaseModel):
-    id_diagnostico_bucal: int
+    id_diagnostico_bucal: UUID
     descripcion: str
     codigos: list[CodigoCie10]
     codificado: bool  # False = solo texto, pendiente de codificar a CIE-10
 
 
 class AtencionExpediente(BaseModel):
-    id_atencion: int
+    id_atencion: UUID
     fecha_atencion: date
     hora_atencion: time | None = None
     aseguradora: str | None = None

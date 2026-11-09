@@ -45,7 +45,7 @@ def _dx_con_codigo(db, atencion, cod_4="K021"):
 
 
 def test_subir_imagen_devuelve_enlace_firmado_y_el_archivo_se_descarga(client, seed, almacen):
-    r = _subir(client, seed["maria"].id_paciente, nombre="C:\\fotos\\radiografía.jpg")
+    r = _subir(client, seed["maria"].public_id, nombre="C:\\fotos\\radiografía.jpg")
     assert r.status_code == 201
     body = r.json()
     assert body["nombre_archivo"] == "radiografía.jpg"  # solo el nombre, nunca carpetas del equipo del usuario
@@ -58,12 +58,12 @@ def test_subir_imagen_devuelve_enlace_firmado_y_el_archivo_se_descarga(client, s
 
 
 def test_formatos_png_y_webp_se_aceptan(client, seed, almacen):
-    assert _subir(client, seed["maria"].id_paciente, PNG, "a.png").status_code == 201
-    assert _subir(client, seed["maria"].id_paciente, WEBP, "a.webp").status_code == 201
+    assert _subir(client, seed["maria"].public_id, PNG, "a.png").status_code == 201
+    assert _subir(client, seed["maria"].public_id, WEBP, "a.webp").status_code == 201
 
 
 def test_solo_imagenes_se_valida_el_contenido_no_el_nombre(client, seed, almacen):
-    pid = seed["maria"].id_paciente
+    pid = seed["maria"].public_id
     assert _subir(client, pid, b"%PDF-1.7 contenido", "foto.jpg").status_code == 415  # disfrazado de imagen
     assert _subir(client, pid, b"texto cualquiera", "nota.txt").status_code == 415
     assert _subir(client, pid, b"", "vacia.jpg").status_code == 422
@@ -71,11 +71,11 @@ def test_solo_imagenes_se_valida_el_contenido_no_el_nombre(client, seed, almacen
 
 def test_archivo_demasiado_grande_es_413(client, seed, almacen, monkeypatch):
     monkeypatch.setattr(get_settings(), "max_upload_mb", 0)
-    assert _subir(client, seed["maria"].id_paciente).status_code == 413
+    assert _subir(client, seed["maria"].public_id).status_code == 413
 
 
 def test_regla_4_el_paciente_es_obligatorio_y_debe_existir(client, seed, almacen):
-    assert _subir(client, 999999).status_code == 404
+    assert _subir(client, "00000000-0000-4000-8000-000000000000").status_code == 404
     sin_paciente = client.post("/api/v1/imagenes", files={"archivo": ("a.jpg", JPEG, "image/jpeg")})
     assert sin_paciente.status_code == 422
 
@@ -84,13 +84,13 @@ def test_la_atencion_y_el_diagnostico_deben_ser_del_paciente(client, seed, db, a
     maria, carlos = seed["maria"], seed["carlos"]
     atencion = _atencion(db, maria)
     dx = _dx_con_codigo(db, atencion)
-    assert _subir(client, carlos.id_paciente, id_atencion=atencion.id_atencion).status_code == 422
-    assert _subir(client, carlos.id_paciente, id_diagnostico_bucal=dx.id_diagnostico_bucal).status_code == 422
-    assert _subir(client, maria.id_paciente, id_diagnostico_bucal=99999).status_code == 422
-    otra = db.query(Atencion).filter(Atencion.id_atencion != atencion.id_atencion).first()
-    mezcla = _subir(
-        client, maria.id_paciente, id_atencion=otra.id_atencion, id_diagnostico_bucal=dx.id_diagnostico_bucal
+    assert _subir(client, carlos.public_id, id_atencion=atencion.public_id).status_code == 422
+    assert _subir(client, carlos.public_id, id_diagnostico_bucal=dx.public_id).status_code == 422
+    assert (
+        _subir(client, maria.public_id, id_diagnostico_bucal="00000000-0000-4000-8000-000000000000").status_code == 422
     )
+    otra = db.query(Atencion).filter(Atencion.id_atencion != atencion.id_atencion).first()
+    mezcla = _subir(client, maria.public_id, id_atencion=otra.public_id, id_diagnostico_bucal=dx.public_id)
     assert mezcla.status_code == 422  # el diagnóstico es de otra atención
 
 
@@ -98,31 +98,31 @@ def test_un_diagnostico_implica_su_atencion(client, seed, db, almacen):
     maria = seed["maria"]
     atencion = _atencion(db, maria)
     dx = _dx_con_codigo(db, atencion)
-    r = _subir(client, maria.id_paciente, id_diagnostico_bucal=dx.id_diagnostico_bucal)
+    r = _subir(client, maria.public_id, id_diagnostico_bucal=dx.public_id)
     assert r.status_code == 201
     body = r.json()
-    assert body["id_atencion"] == atencion.id_atencion and body["diagnostico"] == "Caries"
+    assert body["id_atencion"] == str(atencion.public_id) and body["diagnostico"] == "Caries"
     assert body["fecha_atencion"] == atencion.fecha_atencion.isoformat()
 
 
 def test_misma_imagen_dos_veces_para_el_mismo_paciente_es_409_pero_otro_paciente_si_puede(client, seed, almacen):
-    assert _subir(client, seed["maria"].id_paciente).status_code == 201
-    assert _subir(client, seed["maria"].id_paciente, nombre="otra_vez.jpg").status_code == 409
-    assert _subir(client, seed["carlos"].id_paciente).status_code == 201
+    assert _subir(client, seed["maria"].public_id).status_code == 201
+    assert _subir(client, seed["maria"].public_id, nombre="otra_vez.jpg").status_code == 409
+    assert _subir(client, seed["carlos"].public_id).status_code == 201
 
 
 def test_listar_filtra_por_paciente_texto_diagnostico_y_fecha(client, seed, db, almacen):
     maria, carlos = seed["maria"], seed["carlos"]
     dx = _dx_con_codigo(db, _atencion(db, maria))
-    _subir(client, maria.id_paciente, JPEG, id_diagnostico_bucal=dx.id_diagnostico_bucal)
-    _subir(client, maria.id_paciente, PNG, "b.png")
-    _subir(client, carlos.id_paciente, WEBP, "c.webp")
+    _subir(client, maria.public_id, JPEG, id_diagnostico_bucal=dx.public_id)
+    _subir(client, maria.public_id, PNG, "b.png")
+    _subir(client, carlos.public_id, WEBP, "c.webp")
 
     def total(**params):
         return client.get("/api/v1/imagenes", params=params).json()["total"]
 
     assert total() == 3
-    assert total(id_paciente=maria.id_paciente) == 2
+    assert total(id_paciente=maria.public_id) == 2
     assert total(q="gomez") == 1 and total(q="MARÍA") == 2 and total(q="79.421.880") == 1
     assert total(diagnostico="k021") == 1  # solo la imagen ligada al diagnóstico con ese código
     assert total(diagnostico="C187") == 0
@@ -133,7 +133,7 @@ def test_listar_filtra_por_paciente_texto_diagnostico_y_fecha(client, seed, db, 
 
 
 def test_listar_pagina_y_ordena_lo_mas_reciente_primero(client, seed, almacen):
-    pid = seed["maria"].id_paciente
+    pid = seed["maria"].public_id
     for contenido, nombre in ((JPEG, "1.jpg"), (PNG, "2.png"), (WEBP, "3.webp")):
         _subir(client, pid, contenido, nombre)
     pagina = client.get("/api/v1/imagenes", params={"page_size": 2, "page": 1}).json()
@@ -142,19 +142,19 @@ def test_listar_pagina_y_ordena_lo_mas_reciente_primero(client, seed, almacen):
 
 
 def test_ver_imagen_y_404(client, seed, almacen):
-    creada = _subir(client, seed["maria"].id_paciente).json()
+    creada = _subir(client, seed["maria"].public_id).json()
     assert client.get(f"/api/v1/imagenes/{creada['id_imagen']}").json()["nombre_archivo"] == "foto.jpg"
-    assert client.get("/api/v1/imagenes/999999").status_code == 404
+    assert client.get("/api/v1/imagenes/00000000-0000-4000-8000-000000000000").status_code == 404
 
 
 def test_regla_5_inactivar_oculta_la_imagen_pero_no_borra_nada(client, seed, db, almacen, tmp_path):
-    creada = _subir(client, seed["maria"].id_paciente).json()
+    creada = _subir(client, seed["maria"].public_id).json()
     id_imagen = creada["id_imagen"]
     assert client.delete(f"/api/v1/imagenes/{id_imagen}").status_code == 204
     assert client.get(f"/api/v1/imagenes/{id_imagen}").status_code == 404
     assert client.get("/api/v1/imagenes").json()["total"] == 0
     assert client.delete(f"/api/v1/imagenes/{id_imagen}").status_code == 404  # ya inactiva
-    fila = db.execute(text("SELECT activo FROM imagen_clinica WHERE id_imagen = :i"), {"i": id_imagen}).one()
+    fila = db.execute(text("SELECT activo FROM imagen_clinica WHERE public_id = :i"), {"i": id_imagen}).one()
     assert fila.activo is False  # la fila sigue en la base
     assert len(list(tmp_path.rglob("*.jpg"))) == 1  # y el archivo sigue en el almacenamiento
 
@@ -164,7 +164,7 @@ def test_si_la_indexacion_registro_primero_la_clave_se_completan_los_vinculos(cl
 
     maria = seed["maria"]
     atencion = _atencion(db, maria)
-    creada = _subir(client, maria.id_paciente, id_atencion=atencion.id_atencion).json()
+    creada = _subir(client, maria.public_id, id_atencion=atencion.public_id).json()
     clave = db.execute(text("SELECT url_almacenamiento FROM imagen_clinica")).scalar_one()
     db.execute(text("UPDATE imagen_clinica SET id_atencion = NULL"))  # como si solo existiera el registro de la función
     nuevo = imagen_repo.registrar_o_enriquecer(
@@ -178,15 +178,15 @@ def test_si_la_indexacion_registro_primero_la_clave_se_completan_los_vinculos(cl
             "metadata": {},
         },
     )
-    assert nuevo == creada["id_imagen"]
+    assert str(nuevo) == creada["id_imagen"]  # devuelve el identificador público
     assert db.execute(text("SELECT count(*) FROM imagen_clinica")).scalar_one() == 1
     assert db.execute(text("SELECT id_atencion FROM imagen_clinica")).scalar_one() == atencion.id_atencion
 
 
 def test_sin_sesion_no_hay_acceso_a_imagenes(anon_client, seed, almacen):
     assert anon_client.get("/api/v1/imagenes").status_code == 401
-    assert anon_client.get("/api/v1/imagenes/1").status_code == 401
-    assert anon_client.delete("/api/v1/imagenes/1").status_code == 401
+    assert anon_client.get("/api/v1/imagenes/00000000-0000-4000-8000-000000000000").status_code == 401
+    assert anon_client.delete("/api/v1/imagenes/00000000-0000-4000-8000-000000000000").status_code == 401
     assert anon_client.post("/api/v1/imagenes", data={"id_paciente": "1"}).status_code == 401
 
 

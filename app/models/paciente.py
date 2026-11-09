@@ -1,8 +1,9 @@
 """Entidad paciente (schema.sql v1.1). Regla 1: el documento de identidad es único."""
 
+import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, String, func
+from sqlalchemy import Date, DateTime, String, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -12,6 +13,9 @@ class Paciente(Base):
     __tablename__ = "paciente"
 
     id_paciente: Mapped[int] = mapped_column(primary_key=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, server_default=text("gen_random_uuid()"), unique=True
+    )  # lo que expone la API (v1.5)
     tipo_documento: Mapped[str | None] = mapped_column(String(3))
     documento_identidad: Mapped[str] = mapped_column(String(20), unique=True)
     nombre: Mapped[str] = mapped_column(String(150))

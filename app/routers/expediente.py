@@ -4,6 +4,8 @@ Pantalla de detalle del paciente / 'Detalle de atención' ('Ver imágenes'). Bú
 imágenes. Regla 6: la consulta queda en auditoría antes de entregar el expediente.
 """
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -31,7 +33,7 @@ router = APIRouter(
     responses={404: {"model": ErrorResponse}},
 )
 def obtener_expediente(
-    id_paciente: int,
+    id_paciente: UUID,
     db: Session = Depends(get_db),
     almacen: Almacenamiento = Depends(get_almacenamiento),
     auditor: Auditor = Depends(get_auditor),

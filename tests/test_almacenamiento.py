@@ -158,8 +158,8 @@ def test_s3_con_cliente_real_firma_en_estilo_de_ruta_y_vence(entorno_limpio):
 
 def test_esquemas_de_imagen_y_expediente_validan_una_respuesta_minima():
     imagen = {
-        "id_imagen": 1,
-        "id_paciente": 2,
+        "id_imagen": "1b4e28ba-2fa1-4d3b-a3b4-0c9e8a6c1d11",
+        "id_paciente": "9f1c3d52-7a64-4e0b-8f2d-5c3a1b7e6d22",
         "paciente_nombre": "Ana Pérez",
         "nombre_archivo": "foto.jpg",
         "fecha_carga": "2026-09-12T09:30:00-05:00",
@@ -169,7 +169,7 @@ def test_esquemas_de_imagen_y_expediente_validan_una_respuesta_minima():
     }
     assert ImagenOut(**imagen).id_atencion is None  # la atención es opcional (regla 4: como mínimo, el paciente)
     paciente = {
-        "id_paciente": 2,
+        "id_paciente": "9f1c3d52-7a64-4e0b-8f2d-5c3a1b7e6d22",
         "codigo": "P-0002",
         "tipo_documento": "CC",
         "documento_identidad": "1025847210",

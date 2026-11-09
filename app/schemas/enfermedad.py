@@ -7,6 +7,7 @@ diagnóstico bucal y sus imágenes ('Consultar imágenes').
 from datetime import date
 from enum import StrEnum
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -21,11 +22,11 @@ class Ambito(StrEnum):
 
 
 class EnfermedadPacienteOut(BaseModel):
-    id_paciente: int
+    id_paciente: UUID
     codigo_paciente: str = Field(description="ID visible, p. ej. P-007")
     documento_identidad: str
     nombre: str
-    id_atencion: int
+    id_atencion: UUID
     fecha_atencion: date
     coincide_en: list[Literal["hospitalizacion", "bucal"]] = Field(
         description="Dónde aparece el código en esa atención: diagnóstico de hospitalización y/o diagnóstico bucal"

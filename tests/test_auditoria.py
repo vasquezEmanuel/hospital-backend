@@ -68,11 +68,12 @@ def test_cada_ruta_de_datos_de_pacientes_declara_el_auditor():
 
 
 def test_consultas_y_cambios_de_pacientes_quedan_registrados_sin_datos_clinicos(client, seed, db, almacen):
-    maria = seed["maria"].id_paciente
+    maria = seed["maria"].id_paciente  # la auditoría guarda la clave interna; la API usa el UUID
+    publico = seed["maria"].public_id
     client.get("/api/v1/pacientes", params={"q": "maria", "sexo": "F"})
-    client.get(f"/api/v1/pacientes/{maria}")
-    client.get(f"/api/v1/pacientes/{maria}/expediente")
-    client.patch(f"/api/v1/pacientes/{maria}", json={"telefono": "3001234567"})
+    client.get(f"/api/v1/pacientes/{publico}")
+    client.get(f"/api/v1/pacientes/{publico}/expediente")
+    client.patch(f"/api/v1/pacientes/{publico}", json={"telefono": "3001234567"})
     assert client.post("/api/v1/pacientes", json=NUEVO).status_code == 201
 
     eventos = _eventos(db)
@@ -92,10 +93,11 @@ def test_consultas_y_cambios_de_pacientes_quedan_registrados_sin_datos_clinicos(
 
 def test_imagenes_subir_listar_ver_e_inactivar_quedan_registrados(client, seed, db, almacen):
     maria = seed["maria"].id_paciente
+    publico = seed["maria"].public_id
     creada = client.post(
-        "/api/v1/imagenes", data={"id_paciente": str(maria)}, files={"archivo": ("a.jpg", JPEG, "image/jpeg")}
+        "/api/v1/imagenes", data={"id_paciente": str(publico)}, files={"archivo": ("a.jpg", JPEG, "image/jpeg")}
     ).json()
-    client.get("/api/v1/imagenes", params={"id_paciente": maria, "q": "x"})
+    client.get("/api/v1/imagenes", params={"id_paciente": publico, "q": "x"})
     client.get(f"/api/v1/imagenes/{creada['id_imagen']}")
     client.delete(f"/api/v1/imagenes/{creada['id_imagen']}")
     eventos = _eventos(db)
@@ -111,11 +113,11 @@ def test_imagenes_subir_listar_ver_e_inactivar_quedan_registrados(client, seed, 
 
 
 def test_el_usuario_se_enlaza_con_su_fila_de_profesional_si_existe(client, seed, db):
-    client.get(f"/api/v1/pacientes/{seed['maria'].id_paciente}")
+    client.get(f"/api/v1/pacientes/{seed['maria'].public_id}")
     profesional = Profesional(nombre="Dra. Laura Castaño", identificacion="1", correo="l@h.test", auth_id="auth|test")
     db.add(profesional)
     db.flush()
-    client.get(f"/api/v1/pacientes/{seed['maria'].id_paciente}")
+    client.get(f"/api/v1/pacientes/{seed['maria'].public_id}")
     sin_fila, con_fila = _eventos(db)
     assert sin_fila.id_profesional is None and sin_fila.auth_sub == "auth|test"  # nunca queda sin saber quién fue
     assert con_fila.id_profesional == profesional.id_profesional
@@ -127,14 +129,14 @@ def test_si_la_auditoria_falla_no_se_entregan_ni_se_cambian_datos(client, seed, 
 
     monkeypatch.setattr(auditoria_service, "registrar", falla)
     with pytest.raises(RuntimeError):
-        client.get(f"/api/v1/pacientes/{seed['maria'].id_paciente}")
+        client.get(f"/api/v1/pacientes/{seed['maria'].public_id}")
     with pytest.raises(RuntimeError):
         client.post("/api/v1/pacientes", json=NUEVO)
     assert db.execute(text("SELECT count(*) FROM paciente WHERE documento_identidad = '52880143'")).scalar_one() == 0
 
 
 def test_la_auditoria_es_inmutable_y_siempre_dice_quien_actuo(client, seed, db):
-    client.get(f"/api/v1/pacientes/{seed['maria'].id_paciente}")
+    client.get(f"/api/v1/pacientes/{seed['maria'].public_id}")
     for sql in ("UPDATE auditoria SET accion = 'x'", "DELETE FROM auditoria", "TRUNCATE auditoria"):
         with pytest.raises(DBAPIError, match="inmutable"), db.begin_nested():
             db.execute(text(sql))
@@ -158,7 +160,7 @@ def test_la_auditoria_solo_la_ve_el_administrador(con_roles, anon_client):
 
 
 def test_consultar_la_auditoria_filtra_pagina_y_tambien_queda_registrada(con_roles, seed, db, almacen):
-    maria, carlos = seed["maria"].id_paciente, seed["carlos"].id_paciente
+    maria, carlos = seed["maria"].public_id, seed["carlos"].public_id
     db.add(Profesional(nombre="Dra. Laura Castaño", identificacion="1", correo="l@h.test", auth_id="auth|dra"))
     db.flush()
     dra = con_roles("odontologo", sub="auth|dra")
@@ -170,7 +172,9 @@ def test_consultar_la_auditoria_filtra_pagina_y_tambien_queda_registrada(con_rol
     todo = admin.get("/api/v1/auditoria").json()
     assert todo["total"] == 4  # las 3 consultas de la doctora y esta misma consulta de auditoría
     assert todo["items"][0]["accion"] == "consultar_auditoria"  # lo más reciente primero
-    assert admin.get("/api/v1/auditoria", params={"id_paciente": maria}).json()["total"] == 2
+    de_maria = admin.get("/api/v1/auditoria", params={"id_paciente": maria}).json()
+    assert de_maria["total"] == 2
+    assert {i["id_paciente"] for i in de_maria["items"]} == {str(maria)}  # la API muestra el UUID, no la clave interna
     assert admin.get("/api/v1/auditoria", params={"accion": "consultar_expediente"}).json()["total"] == 1
     por_usuario = admin.get("/api/v1/auditoria", params={"auth_sub": "auth|dra"}).json()
     assert por_usuario["total"] == 3 and {i["profesional_nombre"] for i in por_usuario["items"]} == {

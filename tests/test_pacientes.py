@@ -72,13 +72,13 @@ def test_validaciones_de_entrada(client):
 
 
 def test_ficha_y_aseguradora_actual(client, seed):
-    r = client.get(f"/api/v1/pacientes/{seed['maria'].id_paciente}").json()
+    r = client.get(f"/api/v1/pacientes/{seed['maria'].public_id}").json()
     assert r["aseguradora_actual"] == "SURA" and r["ciudad"] == "Bogotá D.C." and r["edad"] >= 41
-    assert client.get("/api/v1/pacientes/999999").status_code == 404
+    assert client.get("/api/v1/pacientes/00000000-0000-4000-8000-000000000000").status_code == 404
 
 
 def test_editar_no_cambia_el_documento(client, seed):
-    pid = seed["carlos"].id_paciente
+    pid = seed["carlos"].public_id
     r = client.patch(f"/api/v1/pacientes/{pid}", json={"telefono": "3001234567", "documento_identidad": "1"})
     assert r.status_code == 200 and r.json()["telefono"] == "3001234567"
     assert r.json()["documento_identidad"] == "79421880"

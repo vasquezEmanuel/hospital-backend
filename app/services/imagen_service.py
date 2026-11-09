@@ -9,6 +9,7 @@ import hashlib
 import re
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -48,15 +49,15 @@ def _nombre_seguro(nombre: str | None, extension: str) -> str:
 
 def a_salida(almacen: Almacenamiento, fila: FilaImagen) -> ImagenOut:
     """Fila de la base -> respuesta de la API con enlace firmado vigente por signed_url_ttl_seconds."""
-    imagen, paciente_nombre, fecha_atencion, diagnostico = fila
+    imagen, paciente_nombre, fecha_atencion, diagnostico, paciente_pub, atencion_pub, dx_pub = fila
     ttl = get_settings().signed_url_ttl_seconds
     return ImagenOut(
-        id_imagen=imagen.id_imagen,
-        id_paciente=imagen.id_paciente,
+        id_imagen=imagen.public_id,
+        id_paciente=paciente_pub,
         paciente_nombre=paciente_nombre,
-        id_atencion=imagen.id_atencion,
+        id_atencion=atencion_pub,
         fecha_atencion=fecha_atencion,
-        id_diagnostico_bucal=imagen.id_diagnostico_bucal,
+        id_diagnostico_bucal=dx_pub,
         diagnostico=diagnostico,
         nombre_archivo=imagen.nombre_archivo,
         fecha_carga=imagen.fecha_carga,
@@ -67,30 +68,37 @@ def a_salida(almacen: Almacenamiento, fila: FilaImagen) -> ImagenOut:
 
 
 def _validar_vinculos(
-    db: Session, id_paciente: int, id_atencion: int | None, id_diagnostico_bucal: int | None
+    db: Session, id_paciente: int, atencion_publica: uuid.UUID | None, dx_publico: uuid.UUID | None
 ) -> tuple[int | None, int | None]:
-    """La atención y el diagnóstico bucal deben ser del paciente. Un diagnóstico implica su atención."""
-    if id_diagnostico_bucal is not None:
-        dx = db.get(DiagnosticoBucal, id_diagnostico_bucal)
+    """La atención y el diagnóstico bucal (identificadores públicos) deben ser del paciente (clave interna).
+    Un diagnóstico implica su atención. Devuelve las CLAVES INTERNAS para guardar en la base."""
+    id_atencion = id_dx = None
+    if atencion_publica is not None:
+        atencion = db.scalar(select(Atencion).where(Atencion.public_id == atencion_publica))
+        if atencion is None or atencion.id_paciente != id_paciente:
+            raise DatosInvalidosError("La atención no existe o pertenece a otro paciente")
+        id_atencion = atencion.id_atencion
+    if dx_publico is not None:
+        dx = db.scalar(select(DiagnosticoBucal).where(DiagnosticoBucal.public_id == dx_publico))
         if dx is None or not dx.activo:
             raise DatosInvalidosError("El diagnóstico bucal indicado no existe")
         if id_atencion is not None and dx.id_atencion != id_atencion:
             raise DatosInvalidosError("El diagnóstico bucal no pertenece a la atención indicada")
-        id_atencion = dx.id_atencion
-    if id_atencion is not None:
-        atencion = db.get(Atencion, id_atencion)
-        if atencion is None or atencion.id_paciente != id_paciente:
-            raise DatosInvalidosError("La atención no existe o pertenece a otro paciente")
-    return id_atencion, id_diagnostico_bucal
+        if atencion_publica is None:
+            propietaria = db.get(Atencion, dx.id_atencion)
+            if propietaria is None or propietaria.id_paciente != id_paciente:
+                raise DatosInvalidosError("La atención no existe o pertenece a otro paciente")
+        id_atencion, id_dx = dx.id_atencion, dx.id_diagnostico_bucal
+    return id_atencion, id_dx
 
 
 def subir(
     db: Session,
     almacen: Almacenamiento,
     *,
-    id_paciente: int,
-    id_atencion: int | None,
-    id_diagnostico_bucal: int | None,
+    id_paciente: uuid.UUID,
+    id_atencion: uuid.UUID | None,
+    id_diagnostico_bucal: uuid.UUID | None,
     nombre_original: str | None,
     contenido: bytes,
 ) -> ImagenOut:
@@ -103,20 +111,22 @@ def subir(
     if formato is None:
         raise ArchivoNoPermitidoError("Solo se aceptan imágenes JPEG, PNG o WebP")
     extension, tipo = formato
-    if paciente_repo.obtener(db, id_paciente) is None:
+    paciente = paciente_repo.obtener(db, id_paciente)
+    if paciente is None:
         raise NotFoundError("Paciente no encontrado")
-    id_atencion, id_diagnostico_bucal = _validar_vinculos(db, id_paciente, id_atencion, id_diagnostico_bucal)
+    id_atencion, id_diagnostico_bucal = _validar_vinculos(db, paciente.id_paciente, id_atencion, id_diagnostico_bucal)
 
     checksum = hashlib.sha256(contenido).hexdigest()
-    if imagen_repo.existe_checksum(db, id_paciente, checksum):
+    if imagen_repo.existe_checksum(db, paciente.id_paciente, checksum):
         raise ConflictError("Esta imagen ya está cargada para el paciente")
 
-    clave = f"pacientes/{id_paciente}/{uuid.uuid4().hex}{extension}"
+    # La URL firmada contiene la clave: por eso la carpeta lleva el UUID del paciente y no su número interno.
+    clave = f"pacientes/{paciente.public_id}/{uuid.uuid4().hex}{extension}"
     almacen.guardar(clave, contenido, tipo)
-    id_imagen = imagen_repo.registrar_o_enriquecer(
+    public_id = imagen_repo.registrar_o_enriquecer(
         db,
         {
-            "id_paciente": id_paciente,
+            "id_paciente": paciente.id_paciente,
             "id_atencion": id_atencion,
             "id_diagnostico_bucal": id_diagnostico_bucal,
             "nombre_archivo": _nombre_seguro(nombre_original, extension),
@@ -126,7 +136,7 @@ def subir(
         },
     )
     db.commit()
-    return a_salida(almacen, imagen_repo.obtener_fila(db, id_imagen))
+    return a_salida(almacen, imagen_repo.obtener_fila(db, public_id))
 
 
 def listar(db: Session, almacen: Almacenamiento, *, page: int, page_size: int, **filtros) -> Page[ImagenOut]:
@@ -134,14 +144,14 @@ def listar(db: Session, almacen: Almacenamiento, *, page: int, page_size: int, *
     return Page(items=[a_salida(almacen, f) for f in filas], total=total, page=page, page_size=page_size)
 
 
-def obtener(db: Session, almacen: Almacenamiento, id_imagen: int) -> ImagenOut:
+def obtener(db: Session, almacen: Almacenamiento, id_imagen: uuid.UUID) -> ImagenOut:
     fila = imagen_repo.obtener_fila(db, id_imagen)
     if fila is None:
         raise NotFoundError("Imagen no encontrada")
     return a_salida(almacen, fila)
 
 
-def inactivar(db: Session, id_imagen: int) -> None:
+def inactivar(db: Session, id_imagen: uuid.UUID) -> None:
     """Regla 5: borrado lógico. El archivo y la fila se conservan; solo deja de mostrarse."""
     imagen = imagen_repo.obtener_activa(db, id_imagen)
     if imagen is None:

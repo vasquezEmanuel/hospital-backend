@@ -3,6 +3,7 @@
 import re
 from datetime import date, datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -74,8 +75,10 @@ class PacienteUpdate(_PacienteCampos):
 class PacienteListItem(BaseModel):
     """Fila de la tabla 'Pacientes'."""
 
-    id_paciente: int
-    codigo: str = Field(examples=["P-001"], description="ID visible en el front, derivado de id_paciente")
+    id_paciente: UUID = Field(description="Identificador público del paciente (el que se usa en las rutas)")
+    codigo: str = Field(
+        examples=["P-001"], description="ID visible en el front (solo para mostrar; no es un identificador de ruta)"
+    )
     tipo_documento: str | None
     documento_identidad: str
     nombre: str
@@ -88,7 +91,7 @@ class PacienteOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id_paciente: int
+    id_paciente: UUID
     codigo: str
     tipo_documento: str | None
     documento_identidad: str

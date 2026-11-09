@@ -110,7 +110,7 @@ def test_regla_5_solo_cuentan_los_diagnosticos_activos(client, datos, almacen):
 
 
 def test_imagenes_recientes_con_enlace_firmado_y_total(client, datos, almacen):
-    maria = datos["maria"].id_paciente
+    maria = datos["maria"].public_id
     ids = []
     for i in range(4):
         r = client.post(

@@ -7,12 +7,13 @@ diagnósticos de hospitalización y bucales con los códigos CIE-10 vinculados, 
 """
 
 from collections import defaultdict
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import Atencion, Cie10, DiagnosticoBucal, DiagnosticoHospitalario
-from app.repositories import imagen_repo
+from app.repositories import imagen_repo, paciente_repo
 from app.schemas.expediente import (
     AtencionExpediente,
     CodigoCie10,
@@ -22,18 +23,23 @@ from app.schemas.expediente import (
 )
 from app.services import imagen_service, paciente_service
 from app.services.almacenamiento import Almacenamiento
+from app.services.errors import NotFoundError
 
 
 def _codigo(c: Cie10) -> CodigoCie10:
     return CodigoCie10(cod_4=c.cod_4, descripcion=c.descripcion_4, es_odontologico=c.es_odontologico)
 
 
-def obtener(db: Session, almacen: Almacenamiento, id_paciente: int) -> ExpedienteOut:
-    paciente = paciente_service.obtener(db, id_paciente)  # NotFoundError si no existe
+def obtener(db: Session, almacen: Almacenamiento, id_paciente: UUID) -> ExpedienteOut:
+    registro = paciente_repo.obtener(db, id_paciente)
+    if registro is None:
+        raise NotFoundError("Paciente no encontrado")
+    paciente = paciente_service.a_salida(db, registro)
+    id_interno = registro.id_paciente
 
     atenciones = db.scalars(
         select(Atencion)
-        .where(Atencion.id_paciente == id_paciente)
+        .where(Atencion.id_paciente == id_interno)
         .options(joinedload(Atencion.aseguradora), joinedload(Atencion.profesional))
         .order_by(Atencion.fecha_atencion.desc(), Atencion.id_atencion.desc())
     ).all()
@@ -58,7 +64,7 @@ def obtener(db: Session, almacen: Almacenamiento, id_paciente: int) -> Expedient
 
     imagenes_por_atencion = defaultdict(list)
     sin_atencion = []
-    filas = imagen_repo.por_paciente(db, id_paciente)
+    filas = imagen_repo.por_paciente(db, id_interno)
     for fila in filas:
         salida = imagen_service.a_salida(almacen, fila)
         if salida.id_atencion is None:
@@ -71,7 +77,7 @@ def obtener(db: Session, almacen: Almacenamiento, id_paciente: int) -> Expedient
         hosp = hospitalarios.get(a.id_atencion)
         items.append(
             AtencionExpediente(
-                id_atencion=a.id_atencion,
+                id_atencion=a.public_id,
                 fecha_atencion=a.fecha_atencion,
                 hora_atencion=a.hora_atencion,
                 aseguradora=a.aseguradora.nombre if a.aseguradora else None,
@@ -90,14 +96,14 @@ def obtener(db: Session, almacen: Almacenamiento, id_paciente: int) -> Expedient
                 ),
                 diagnosticos_bucales=[
                     DiagnosticoBucalOut(
-                        id_diagnostico_bucal=d.id_diagnostico_bucal,
+                        id_diagnostico_bucal=d.public_id,
                         descripcion=d.descripcion,
                         codigos=[_codigo(c) for c in d.codigos],
                         codificado=bool(d.codigos),
                     )
                     for d in bucales.get(a.id_atencion, [])
                 ],
-                imagenes=imagenes_por_atencion.get(a.id_atencion, []),
+                imagenes=imagenes_por_atencion.get(a.public_id, []),
             )
         )
     return ExpedienteOut(

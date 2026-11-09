@@ -5,7 +5,9 @@ una atención tiene a lo sumo un diagnóstico de hospitalización (UNIQUE sobre 
 fuente se conserva siempre; el vínculo con CIE-10 puede faltar (diagnóstico pendiente de codificar).
 """
 
-from sqlalchemy import Boolean, Column, ForeignKey, Table, Text
+import uuid
+
+from sqlalchemy import Boolean, Column, ForeignKey, Table, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -35,6 +37,9 @@ class DiagnosticoBucal(Base):
     __tablename__ = "diagnostico_bucal"
 
     id_diagnostico_bucal: Mapped[int] = mapped_column(primary_key=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, server_default=text("gen_random_uuid()"), unique=True
+    )  # lo que expone la API (v1.5)
     id_atencion: Mapped[int] = mapped_column(ForeignKey("atencion.id_atencion"))
     descripcion: Mapped[str] = mapped_column(Text)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)

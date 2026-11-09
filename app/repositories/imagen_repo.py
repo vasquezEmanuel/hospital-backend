@@ -6,6 +6,7 @@ nunca DELETE físico) y regla 7 (aquí solo viven las claves del almacenamiento;
 
 import re
 from datetime import date, datetime, time, timedelta, timezone
+from uuid import UUID
 
 from sqlalchemy import Select, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -18,13 +19,22 @@ from app.repositories.busqueda import normalizar_busqueda, sin_tildes
 COLOMBIA = timezone(timedelta(hours=-5))  # sin horario de verano: evita depender de la base de zonas horarias del SO
 _DOC_SEPARATORS = re.compile(r"[.\s-]")
 
-# (imagen, nombre del paciente, fecha de la atención o None, texto del diagnóstico bucal o None)
-FilaImagen = tuple[ImagenClinica, str, date | None, str | None]
+# (imagen, nombre del paciente, fecha de la atención o None, texto del diagnóstico bucal o None,
+#  identificador público del paciente, de la atención y del diagnóstico bucal)
+FilaImagen = tuple[ImagenClinica, str, date | None, str | None, UUID, UUID | None, UUID | None]
 
 
 def _base() -> Select:
     return (
-        select(ImagenClinica, Paciente.nombre, Atencion.fecha_atencion, DiagnosticoBucal.descripcion)
+        select(
+            ImagenClinica,
+            Paciente.nombre,
+            Atencion.fecha_atencion,
+            DiagnosticoBucal.descripcion,
+            Paciente.public_id,
+            Atencion.public_id,
+            DiagnosticoBucal.public_id,
+        )
         .join(Paciente, Paciente.id_paciente == ImagenClinica.id_paciente)
         .outerjoin(Atencion, Atencion.id_atencion == ImagenClinica.id_atencion)
         .outerjoin(DiagnosticoBucal, DiagnosticoBucal.id_diagnostico_bucal == ImagenClinica.id_diagnostico_bucal)
@@ -35,8 +45,8 @@ def _base() -> Select:
 def listar(
     db: Session,
     *,
-    id_paciente: int | None,
-    id_atencion: int | None,
+    id_paciente: UUID | None,
+    id_atencion: UUID | None,
     q: str | None,
     cod_4: str | None,
     fecha_desde: date | None,
@@ -46,9 +56,9 @@ def listar(
 ) -> tuple[list[FilaImagen], int]:
     base = _base()
     if id_paciente is not None:
-        base = base.where(ImagenClinica.id_paciente == id_paciente)
+        base = base.where(Paciente.public_id == id_paciente)
     if id_atencion is not None:
-        base = base.where(ImagenClinica.id_atencion == id_atencion)
+        base = base.where(Atencion.public_id == id_atencion)
     if q:
         q = q.strip()
         condiciones = [sin_tildes(Paciente.nombre).contains(normalizar_busqueda(q), autoescape=True)]
@@ -88,13 +98,13 @@ def listar(
     return [tuple(f) for f in filas], total
 
 
-def obtener_fila(db: Session, id_imagen: int) -> FilaImagen | None:
-    fila = db.execute(_base().where(ImagenClinica.id_imagen == id_imagen)).first()
+def obtener_fila(db: Session, public_id: UUID) -> FilaImagen | None:
+    fila = db.execute(_base().where(ImagenClinica.public_id == public_id)).first()
     return tuple(fila) if fila else None
 
 
-def obtener_activa(db: Session, id_imagen: int) -> ImagenClinica | None:
-    imagen = db.get(ImagenClinica, id_imagen)
+def obtener_activa(db: Session, public_id: UUID) -> ImagenClinica | None:
+    imagen = db.scalar(select(ImagenClinica).where(ImagenClinica.public_id == public_id))
     return imagen if imagen is not None and imagen.activo else None
 
 
@@ -134,9 +144,9 @@ def existe_checksum(db: Session, id_paciente: int, checksum: str) -> bool:
     )
 
 
-def registrar_o_enriquecer(db: Session, valores: dict) -> int:
+def registrar_o_enriquecer(db: Session, valores: dict) -> UUID:
     """Alta desde la API. Si la función de indexación ya registró esa clave (el evento llegó antes del commit),
-    se completan los vínculos (atención, diagnóstico) en vez de fallar. Devuelve id_imagen."""
+    se completan los vínculos (atención, diagnóstico) en vez de fallar. Devuelve el identificador público."""
     tabla = ImagenClinica.__table__
     stmt = pg_insert(tabla).values(**valores)
     stmt = stmt.on_conflict_do_update(
@@ -145,7 +155,7 @@ def registrar_o_enriquecer(db: Session, valores: dict) -> int:
             campo: stmt.excluded[campo]
             for campo in ("id_atencion", "id_diagnostico_bucal", "nombre_archivo", "metadata", "checksum")
         },
-    ).returning(tabla.c.id_imagen)
+    ).returning(tabla.c.public_id)
     return db.execute(stmt).scalar_one()
 
 
