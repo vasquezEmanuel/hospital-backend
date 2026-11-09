@@ -77,11 +77,14 @@ class Settings(BaseSettings):
             problemas.append("STORAGE_BACKEND debe ser s3")
         if not self.cors_origin_list or "*" in self.cors_origin_list:
             problemas.append("CORS_ORIGINS debe listar los dominios del front (sin *)")
+        elif any(not o.startswith("https://") for o in self.cors_origin_list):
+            problemas.append("CORS_ORIGINS en producción solo admite dominios https:// (sin http://localhost)")
         return problemas
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        """Dominios del front. Se quita la barra final: el navegador envía el origen sin ella y no coincidiría."""
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
 
 
 @lru_cache

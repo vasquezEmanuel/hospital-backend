@@ -30,12 +30,14 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if s.docs_enabled else None,
         openapi_url="/openapi.json" if s.docs_enabled else None,
     )
-    if s.cors_origin_list:
+    if s.cors_origin_list:  # el front (otro dominio) llama a la API con "Authorization: Bearer": sin cookies
         app.add_middleware(
             CORSMiddleware,
             allow_origins=s.cors_origin_list,
             allow_methods=["GET", "POST", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type"],
+            allow_credentials=False,  # el token va en la cabecera, no en cookies
+            max_age=600,  # el navegador recuerda el permiso 10 min: menos peticiones de verificación (OPTIONS)
         )
     app.include_router(health.router)
     app.include_router(pacientes.router, prefix="/api/v1")
