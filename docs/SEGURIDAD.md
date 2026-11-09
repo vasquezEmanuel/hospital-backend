@@ -33,7 +33,7 @@ Render → tu servicio → **Environment**. Agrega o edita:
 
 **Borra `AUTH_JWT_SECRET`** (con almacenamiento S3 ya no se necesita y así ningún token de prueba vuelve a funcionar). **Save, rebuild, and deploy.**
 
-## Fase D · Postman: iniciar sesión
+## Fase D · Postman: iniciar sesión (opcional; sin Postman vea la sección «Fases D y E sin Postman»)
 1. Importa `Hospital_API_Demo.postman_collection.json` (elige **Replace** si Postman pregunta; borra la colección anterior si quedó duplicada).
 2. Colección → **Variables**, columna **Current value** (no Initial): `supabase_key` (la clave pública), `password_odontologo`, `password_admin`. Verifica `supabase_url` y los dos correos. **Save**.
 3. Carpeta **A**: `A.1 Iniciar sesión (odontólogo)` → 200 y *Rol odontologo dentro del token*. Repite con el administrador.
@@ -48,6 +48,40 @@ Por cada usuario (primero odontólogo, luego administrador):
 5. Cada sesión nueva: `A.1`, `A.4`, `A.5` (el token dura 1 hora por defecto).
 
 Cuando ambos tengan aal2, en Render pon `AUTH_REQUIRE_MFA=true` y redespliega. Comprobación: con un token recién iniciado (`A.1`, aal1) las peticiones dan **403 "Se requiere verificación en dos pasos (MFA)"**; después de `A.4`+`A.5` dan 200.
+
+## Fases D y E sin Postman (script + Swagger)
+Postman es opcional. Estas dos fases se hacen con un script que inicia sesión y un navegador. Se necesita Python 3.12+ instalado (el script **no** usa el `.env` ni el entorno virtual).
+
+**1. Obtener el token (con segundo factor).** En PowerShell, dentro de la carpeta del repo:
+```
+python -m scripts.iniciar_sesion --url https://REF.supabase.co --key TU_CLAVE_PUBLICA --email correo@del.usuario
+```
+- La contraseña se escribe cuando el script la pide (no se ve).
+- **Primera vez de ese usuario:** el script muestra un *secreto*. En Google/Microsoft Authenticator o Authy: *Añadir cuenta → Ingresar clave de configuración* y pega el secreto. Luego escribe el código de 6 dígitos.
+- **Veces siguientes:** solo contraseña y el código actual de la app (cambia cada 30 s).
+- Al terminar dice `Nivel: aal2 (con segundo factor)` y **copia el token al portapapeles**. Si no pudo copiarlo, lo imprime (añade `--mostrar` para forzarlo).
+- `--sin-mfa` entrega un token solo con contraseña (aal1), útil para comprobar que la API lo rechaza cuando `AUTH_REQUIRE_MFA=true`.
+
+**2. Usar el token en Swagger.** Abre `https://hospital-backend-43np.onrender.com/docs` (si `DOCS_ENABLED=true`) → botón **Authorize** → pega el token → **Authorize** → **Close**. Desde ese momento cada petición de Swagger lo envía.
+
+**3. Comprobar que funciona (Fase D).**
+| Prueba en Swagger | Resultado correcto |
+|---|---|
+| `GET /api/v1/pacientes` → *Try it out* → *Execute* | **200** (lista, aunque esté vacía) |
+| Sin pulsar Authorize | **401** |
+| Token vencido (más de 1 h) | **401**: repetir el paso 1 |
+| Usuario sin rol en `app_metadata.roles` | **403 "Rol insuficiente"** |
+
+**4. Comprobar el MFA (Fase E).** Con `AUTH_REQUIRE_MFA=true` en Render:
+| Token | `GET /api/v1/pacientes` |
+|---|---|
+| obtenido con `--sin-mfa` (aal1) | **403 "Se requiere verificación en dos pasos (MFA)"** |
+| obtenido normal (aal2) | **200** |
+
+**5. Demostración: crear paciente y subir imagen.** Con el token puesto:
+- `POST /api/v1/pacientes` → *Try it out* → cuerpo con los datos del paciente (el mismo JSON de la demo) → **201**; anota el `id`.
+- `POST /api/v1/imagenes` → *Try it out* → el campo `archivo` muestra **Elegir archivo** (selecciona una imagen) → completa `id_paciente` → **201**.
+- `GET /api/v1/imagenes?id_paciente=ID` (o `GET /api/v1/imagenes/{id_imagen}`) → entrega el enlace temporal firmado (5 minutos); cópialo y ábrelo en el navegador para ver la imagen.
 
 ## Fase F · Usuario de base de datos restringido
 1. Abre `docs/sql/seguridad_bd.sql`, cambia `CAMBIAR_ESTA_CONTRASENA` por una contraseña larga de **solo letras y números** y guárdala.
