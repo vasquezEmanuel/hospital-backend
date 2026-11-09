@@ -26,7 +26,7 @@ def ready(db: Session = Depends(get_db)) -> dict:
     try:
         db.execute(text("SELECT 1"))
     except Exception as exc:
-        # La causa real (contraseña, usuario, red) queda en el log de Render; al cliente solo se le dice que no está lista.
+        # La causa real (contraseña, usuario, red) queda en el log de Render; al cliente solo se le dice que falló.
         causa = str(getattr(exc, "orig", exc)).strip().splitlines()
         log.error(
             "Readiness: falló la conexión a la base de datos (%s): %s", type(exc).__name__, causa[0] if causa else ""
