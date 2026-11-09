@@ -4,7 +4,7 @@ Objetivo: tener la API en internet, con base de datos real y datos **sintéticos
 Render ejecuta el contenedor (`Dockerfile`); Supabase aloja PostgreSQL. Las migraciones se aplican solas al arrancar.
 
 > **Solo datos sintéticos.** Esta configuración es una demostración: usa tokens de desarrollo y almacenamiento temporal.
-> No cargues datos reales de pacientes hasta tener proveedor de identidad (OIDC + MFA) y almacenamiento S3 (Sprint 5).
+> No cargues datos reales de pacientes hasta tener proveedor de identidad (OIDC) y almacenamiento S3 (Sprint 5).
 
 ## 0. Antes de desplegar
 El CI de GitHub debe estar en verde (`pytest`, `ruff`, deriva de esquema, `pip-audit`).
@@ -110,5 +110,5 @@ prueba los endpoints del guion.
 | El enlace de la imagen apunta a `localhost` | falta `PUBLIC_BASE_URL` en Render |
 
 ## Qué falta para producción real (Sprint 5)
-Proveedor de identidad (Auth0/Cognito/Supabase Auth con MFA) en lugar de tokens de desarrollo, `ENVIRONMENT=production`
+Proveedor de identidad (Auth0/Cognito/Supabase Auth) en lugar de tokens de desarrollo, `ENVIRONMENT=production`
 y `DOCS_ENABLED=false`, almacenamiento S3 (añadir `boto3`), migraciones como paso de despliegue aparte, pruebas de carga.
