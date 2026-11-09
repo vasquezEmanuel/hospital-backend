@@ -5,7 +5,8 @@ Es IDEMPOTENTE: el índice único sobre la clave (esquema v1.3) hace que recibir
 ya lo haya registrado, no duplique nada. Nunca crea pacientes ni adivina: si no puede determinar el paciente, lo dice.
 
 Claves que reconoce (la primera carpeta que coincida):
-  pacientes/{id_paciente}/archivo.jpg                      imágenes subidas por la API
+  pacientes/{uuid_del_paciente}/archivo.jpg                imágenes subidas por la API (desde v1.5)
+  pacientes/{id_numerico}/archivo.jpg                      imágenes subidas por la API antes de v1.5 (siguen válidas)
   [prefijo/]{documento}_{nombre}/archivo.jpg               carpetas históricas: numeroIdentificacion_nombrePaciente
 """
 
@@ -14,6 +15,7 @@ import mimetypes
 import re
 from dataclasses import dataclass
 from typing import Literal
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -39,14 +41,29 @@ class Resultado:
     id_imagen: int | None = None
 
 
+def _uuid_o_none(texto: str) -> UUID | None:
+    try:
+        return UUID(texto)
+    except ValueError:
+        return None
+
+
 def _paciente_de(db: Session, carpetas: list[str]) -> tuple[int | None, str]:
-    """(id_paciente, motivo si no se encontró)."""
+    """(clave interna del paciente, motivo si no se encontró)."""
     for i, carpeta in enumerate(carpetas):
-        if _CARPETA_API.match(carpeta) and i + 1 < len(carpetas) and carpetas[i + 1].isdigit():
-            id_paciente = int(carpetas[i + 1])
-            if paciente_repo.obtener(db, id_paciente) is None:
-                return None, f"no existe el paciente con identificador {id_paciente}"
-            return id_paciente, ""
+        if _CARPETA_API.match(carpeta) and i + 1 < len(carpetas):
+            segmento = carpetas[i + 1]
+            publico = _uuid_o_none(segmento)
+            if publico is not None:  # claves nuevas: pacientes/{uuid}/...
+                paciente = paciente_repo.obtener(db, publico)
+                if paciente is None:
+                    return None, f"no existe el paciente con identificador {publico}"
+                return paciente.id_paciente, ""
+            if segmento.isdigit():  # claves anteriores a v1.5: pacientes/{id numérico}/...
+                paciente = paciente_repo.obtener_por_id_interno(db, int(segmento))
+                if paciente is None:
+                    return None, f"no existe el paciente con identificador {segmento}"
+                return paciente.id_paciente, ""
     for carpeta in carpetas:
         m = _CARPETA_HISTORICA.match(carpeta)
         if not m:
@@ -59,7 +76,7 @@ def _paciente_de(db: Session, carpetas: list[str]) -> tuple[int | None, str]:
         if paciente is None:
             return None, f"no hay un paciente con el documento {documento} (cargue primero las atenciones)"
         return paciente.id_paciente, ""
-    return None, "la ruta no indica a qué paciente pertenece (se esperaba pacientes/{id}/ o {documento}_{nombre}/)"
+    return None, "la ruta no indica a qué paciente pertenece (se esperaba pacientes/{uuid}/ o {documento}_{nombre}/)"
 
 
 def indexar_clave(db: Session, clave: str, tamano: int | None = None) -> Resultado:

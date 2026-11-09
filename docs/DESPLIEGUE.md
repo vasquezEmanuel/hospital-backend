@@ -88,8 +88,8 @@ prueba los endpoints del guion.
 | Seguridad | cualquier endpoint sin token | `401` |
 | Búsqueda tolerante | `GET /api/v1/pacientes?q=maria` | encuentra "María" sin tildes |
 | Catálogo | `GET /api/v1/cie10?odontologico=true` | 5 códigos odontológicos (regla 2) |
-| Imágenes | `POST /api/v1/imagenes` (archivo + `id_paciente`) | regla 4; devuelve enlace firmado y temporal (regla 7) |
-| Paciente → enfermedades e imágenes | `GET /api/v1/pacientes/{id}/expediente` | búsqueda por paciente |
+| Imágenes | `POST /api/v1/imagenes` (archivo + `id_paciente`, un UUID) | regla 4; devuelve enlace firmado y temporal (regla 7) |
+| Paciente → enfermedades e imágenes | `GET /api/v1/pacientes/{id_paciente}/expediente` (UUID) | búsqueda por paciente |
 | Enfermedad → pacientes | `GET /api/v1/enfermedades/C187/pacientes?en=hospitalizacion` y `K021?en=bucal` | búsqueda por enfermedad |
 | Auditoría | `GET /api/v1/auditoria` con `$ADMIN` | regla 6; con `$TOKEN` responde `403` (roles del IdP) |
 

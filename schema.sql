@@ -1,11 +1,12 @@
 -- ============================================================================
--- Esquema v1.4 — Sistema de Gestión de Pacientes, Enfermedades e
+-- Esquema v1.5 — Sistema de Gestión de Pacientes, Enfermedades e
 -- Imágenes Clínicas — Hospital Alma Mater, Área de Odontología.
 -- Motor: PostgreSQL 16
 -- v1.1: ajustes tras contrastar el front (ver alembic/versions/0002_ajustes_front.py).
 -- v1.2: tratamientos, cola de revisión del importador, aseguradora.activo (ver alembic/versions/0003_*.py).
 -- v1.3: clave de almacenamiento única en imagen_clinica (ver alembic/versions/0004_*.py).
 -- v1.4: auditoría completa e inmutable (regla 6) (ver alembic/versions/0005_*.py).
+-- v1.5: identificador público UUID (public_id) en paciente, atencion, diagnostico_bucal e imagen_clinica (ver alembic/versions/0006_*.py).
 --       La línea base v1.0 vive intacta en alembic/sql/0001_baseline.sql.
 -- ============================================================================
 
@@ -58,6 +59,7 @@ CREATE TABLE profesional (
 
 CREATE TABLE paciente (
     id_paciente         SERIAL PRIMARY KEY,
+    public_id           UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,  -- v1.5: único identificador que expone la API (el SERIAL es interno)
     tipo_documento      VARCHAR(3) CHECK (tipo_documento IN ('CC', 'TI', 'RC', 'CE', 'PA', 'PE', 'PT')),  -- v1.1: formulario "Nuevo paciente"; NULL en datos históricos
     documento_identidad VARCHAR(20) NOT NULL UNIQUE,
     nombre              VARCHAR(150) NOT NULL,
@@ -71,6 +73,7 @@ CREATE TABLE paciente (
 
 CREATE TABLE atencion (
     id_atencion         SERIAL PRIMARY KEY,
+    public_id           UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,  -- v1.5
     id_paciente         INTEGER NOT NULL REFERENCES paciente (id_paciente),
     fecha_atencion      DATE NOT NULL,
     hora_atencion       TIME,           -- v1.1: el detalle de atención muestra la hora; NULL en históricos (la fuente solo trae fecha)
@@ -97,6 +100,7 @@ CREATE TABLE diagnostico_hospitalario (
 -- Diagnóstico bucal: 0..N por atención (una fila por cada DIAGNÓSTICO BUCAL no vacío de la fuente).
 CREATE TABLE diagnostico_bucal (
     id_diagnostico_bucal SERIAL PRIMARY KEY,
+    public_id            UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,  -- v1.5
     id_atencion          INTEGER NOT NULL REFERENCES atencion (id_atencion),
     descripcion          TEXT NOT NULL,  -- texto tal como viene de la fuente
     activo                BOOLEAN NOT NULL DEFAULT TRUE
@@ -190,6 +194,7 @@ CREATE INDEX idx_importacion_fila_estado ON importacion_fila (estado);
 
 CREATE TABLE imagen_clinica (
     id_imagen            SERIAL PRIMARY KEY,
+    public_id            UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,  -- v1.5
     id_paciente          INTEGER NOT NULL REFERENCES paciente (id_paciente),
     id_atencion          INTEGER REFERENCES atencion (id_atencion),
     id_diagnostico_bucal INTEGER REFERENCES diagnostico_bucal (id_diagnostico_bucal),

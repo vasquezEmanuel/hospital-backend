@@ -4,22 +4,33 @@ Regla 6. Solo se inserta y se consulta: la base de datos impide modificar o borr
 """
 
 from datetime import date, datetime, time, timedelta
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Auditoria, ImagenClinica, Profesional
+from app.models import Auditoria, ImagenClinica, Paciente, Profesional
 from app.repositories.imagen_repo import COLOMBIA
 
-FilaAuditoria = tuple[Auditoria, str | None]  # (evento, nombre del profesional si está registrado)
+# (evento, nombre del profesional si está registrado, identificador público del paciente si aplica)
+FilaAuditoria = tuple[Auditoria, str | None, UUID | None]
 
 
 def profesional_por_auth_id(db: Session, auth_sub: str) -> int | None:
     return db.scalar(select(Profesional.id_profesional).where(Profesional.auth_id == auth_sub))
 
 
-def paciente_de_imagen(db: Session, id_imagen: int) -> int | None:
-    return db.scalar(select(ImagenClinica.id_paciente).where(ImagenClinica.id_imagen == id_imagen))
+def paciente_de_imagen(db: Session, id_imagen: UUID) -> int | None:
+    """Clave interna del paciente dueño de una imagen (se recibe el identificador público de la imagen)."""
+    return db.scalar(select(ImagenClinica.id_paciente).where(ImagenClinica.public_id == id_imagen))
+
+
+def ids_internos_de_pacientes(db: Session, publicos: list[UUID]) -> dict[UUID, int]:
+    """Identificador público -> clave interna. La auditoría guarda la clave interna (sin FK, ver schema.sql)."""
+    if not publicos:
+        return {}
+    filas = db.execute(select(Paciente.public_id, Paciente.id_paciente).where(Paciente.public_id.in_(publicos)))
+    return {publico: interno for publico, interno in filas}
 
 
 def agregar(db: Session, eventos: list[Auditoria]) -> None:
@@ -30,7 +41,7 @@ def agregar(db: Session, eventos: list[Auditoria]) -> None:
 def listar(
     db: Session,
     *,
-    id_paciente: int | None,
+    id_paciente: UUID | None,
     id_profesional: int | None,
     auth_sub: str | None,
     accion: str | None,
@@ -39,11 +50,13 @@ def listar(
     page: int,
     page_size: int,
 ) -> tuple[list[FilaAuditoria], int]:
-    base = select(Auditoria, Profesional.nombre).outerjoin(
-        Profesional, Profesional.id_profesional == Auditoria.id_profesional
+    base = (
+        select(Auditoria, Profesional.nombre, Paciente.public_id)
+        .outerjoin(Profesional, Profesional.id_profesional == Auditoria.id_profesional)
+        .outerjoin(Paciente, Paciente.id_paciente == Auditoria.id_paciente)
     )
     if id_paciente is not None:
-        base = base.where(Auditoria.id_paciente == id_paciente)
+        base = base.where(Paciente.public_id == id_paciente)
     if id_profesional is not None:
         base = base.where(Auditoria.id_profesional == id_profesional)
     if auth_sub:

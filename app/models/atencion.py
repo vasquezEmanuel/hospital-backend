@@ -1,8 +1,9 @@
 """Entidad atencion (schema.sql v1.1). profesional_texto = respaldo de atenciones históricas."""
 
+import uuid
 from datetime import date, datetime, time
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, Text, Time, func
+from sqlalchemy import Date, DateTime, ForeignKey, String, Text, Time, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -14,6 +15,9 @@ class Atencion(Base):
     __tablename__ = "atencion"
 
     id_atencion: Mapped[int] = mapped_column(primary_key=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, server_default=text("gen_random_uuid()"), unique=True
+    )  # lo que expone la API (v1.5)
     id_paciente: Mapped[int] = mapped_column(ForeignKey("paciente.id_paciente"))
     fecha_atencion: Mapped[date] = mapped_column(Date)
     hora_atencion: Mapped[time | None] = mapped_column(Time)

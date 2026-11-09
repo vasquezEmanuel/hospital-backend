@@ -92,7 +92,24 @@ Formas de respuesta que el front debe esperar:
 - Imagen: `id_imagen`, `id_paciente`, `paciente_nombre`, `nombre_archivo`, `fecha_carga`, `url`, `url_expira_en_segundos`, `activo`.
 - Errores: 401 sin sesión o token vencido (volver al login); 403 `"Rol insuficiente"` (el usuario no tiene rol asignado); 404/409/422 con un mensaje en `detail`.
 
-## 4. Cosas que suelen fallar
+## 4. Identificadores: siempre UUID (cambio del Sprint 6)
+
+La API **no usa números** para identificar nada. Pacientes, atenciones, diagnósticos bucales e imágenes se identifican con un **UUID** (p. ej. `9f1c3d52-7a64-4e0b-8f2d-5c3a1b7e6d22`). Un número (`/pacientes/12`) responde **422**.
+
+| Dónde aparece | Antes | Ahora |
+|---|---|---|
+| Rutas: `/pacientes/{id}`, `/pacientes/{id}/expediente`, `/imagenes/{id}` | número | UUID |
+| Respuestas: `id_paciente`, `id_atencion`, `id_diagnostico_bucal`, `id_imagen` | número | UUID (texto) |
+| Filtros: `GET /imagenes?id_paciente=...&id_atencion=...`, `GET /auditoria?id_paciente=...` | número | UUID |
+| Subida de imagen (`FormData`): `id_paciente`, `id_atencion`, `id_diagnostico_bucal` | número | UUID |
+
+Reglas para el front:
+- Trata el UUID como **texto opaco**: no lo conviertas a número ni asumas orden entre ellos.
+- Los nombres de los campos **no cambian**; solo cambia su valor.
+- Para **mostrar** al usuario sigue usando `codigo` (p. ej. `P-007`) y los demás campos legibles. El `codigo` es solo para mostrar y buscar en el cuadro de texto: **no** sirve como identificador de ruta.
+- Si el id no existe, la respuesta es 404; si no tiene forma de UUID, 422.
+
+## 5. Cosas que suelen fallar
 
 | Síntoma en el navegador | Causa | Solución |
 |---|---|---|
@@ -100,10 +117,11 @@ Formas de respuesta que el front debe esperar:
 | El mismo error pero solo en la primera petición del día | el plan gratuito de Render duerme el servicio (~1 min al despertar) | reintentar; en el front mostrar "Conectando…" y llamar a `GET /health` al cargar |
 | 401 | token vencido (1 h) o `AUTH_ISSUER`/`AUTH_AUDIENCE`/`AUTH_JWKS_URL` mal escritos | volver a iniciar sesión; revisar variables |
 | 403 "Rol insuficiente" | el usuario no tiene `app_metadata.roles` | paso 4 de la sección 2 y volver a entrar |
-| Subida de imagen da 422 | falta `archivo` o `id_paciente`, o se puso `Content-Type` a mano | usar `FormData` sin cabecera `Content-Type` |
+| Subida de imagen da 422 | falta `archivo` o `id_paciente`, el `id_paciente` no es un UUID, o se puso `Content-Type` a mano | usar el UUID que devolvió la API y `FormData` sin cabecera `Content-Type` |
+| 422 al abrir una ficha o un expediente | se está usando un número o el `codigo` (`P-007`) en la ruta | usar `id_paciente` (UUID) de la respuesta del listado |
 | La imagen no carga | el enlace caducó (5 min) | volver a pedir el listado |
 
-## 5. Orden recomendado para integrar
+## 6. Orden recomendado para integrar
 
 1. Conectar login, listar pacientes, crear paciente y subir imagen.
 2. Cuando el front esté desplegado: agregar su dirección `https://...` a `CORS_ORIGINS`.

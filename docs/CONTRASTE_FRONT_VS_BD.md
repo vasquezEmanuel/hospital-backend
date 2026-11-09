@@ -27,7 +27,7 @@ Sigue pendiente la decisión sobre el CSV del catálogo CIE-10 (punto C.2): el e
 
 | Dato del front | Cómo se obtiene |
 |---|---|
-| ID de paciente `P-001` | `P-{id_paciente:03d}` calculado en la API (también se puede buscar por él) |
+| ID de paciente `P-001` | `P-{id_paciente:03d}` calculado en la API a partir de la clave interna; solo para mostrar y buscar. Las rutas usan el UUID (`public_id`, Sprint 6) |
 | Código de atención `AT-2026-0912` / `A001` | Se calcula desde `id_atencion` (Sprint 3). **El front muestra "A001" repetido en todas las filas: es maqueta, debe ser único.** |
 | Edad | Desde `fecha_nacimiento` |
 | Aseguradora del paciente | Aseguradora de su última atención (el paciente no tiene aseguradora fija) |

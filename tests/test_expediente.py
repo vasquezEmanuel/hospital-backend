@@ -39,10 +39,10 @@ def test_expediente_reune_atenciones_diagnosticos_e_imagenes(client, seed, db, a
     sin_codigo = DiagnosticoBucal(id_atencion=reciente.id_atencion, descripcion="Mucositis por quimioterapia")
     db.add_all([con_codigo, sin_codigo])
     db.flush()
-    _subir(client, maria.id_paciente, JPEG, id_diagnostico_bucal=con_codigo.id_diagnostico_bucal)
-    _subir(client, maria.id_paciente, PNG)  # solo del paciente, sin atención
+    _subir(client, maria.public_id, JPEG, id_diagnostico_bucal=con_codigo.public_id)
+    _subir(client, maria.public_id, PNG)  # solo del paciente, sin atención
 
-    r = client.get(f"/api/v1/pacientes/{maria.id_paciente}/expediente")
+    r = client.get(f"/api/v1/pacientes/{maria.public_id}/expediente")
     assert r.status_code == 200
     body = r.json()
     assert body["paciente"]["nombre"] == "María Rodríguez" and body["total_imagenes"] == 2
@@ -63,7 +63,7 @@ def test_expediente_reune_atenciones_diagnosticos_e_imagenes(client, seed, db, a
 
 
 def test_expediente_no_incluye_imagenes_inactivas(client, seed, almacen):
-    pid = seed["maria"].id_paciente
+    pid = seed["maria"].public_id
     id_imagen = _subir(client, pid, JPEG).json()["id_imagen"]
     client.delete(f"/api/v1/imagenes/{id_imagen}")
     body = client.get(f"/api/v1/pacientes/{pid}/expediente").json()
@@ -71,22 +71,22 @@ def test_expediente_no_incluye_imagenes_inactivas(client, seed, almacen):
 
 
 def test_expediente_de_un_paciente_sin_atenciones(client, seed, almacen):
-    body = client.get(f"/api/v1/pacientes/{seed['carlos'].id_paciente}/expediente").json()
+    body = client.get(f"/api/v1/pacientes/{seed['carlos'].public_id}/expediente").json()
     assert body["atenciones"] == [] and body["total_imagenes"] == 0
 
 
 def test_expediente_inexistente_es_404(client, almacen):
-    assert client.get("/api/v1/pacientes/999999/expediente").status_code == 404
+    assert client.get("/api/v1/pacientes/00000000-0000-4000-8000-000000000000/expediente").status_code == 404
 
 
 def test_expediente_exige_sesion(anon_client, almacen):
-    assert anon_client.get("/api/v1/pacientes/1/expediente").status_code == 401
+    assert anon_client.get("/api/v1/pacientes/00000000-0000-4000-8000-000000000000/expediente").status_code == 401
 
 
 def test_atencion_sin_diagnosticos_ni_imagenes_sale_vacia_pero_presente(client, seed, db, almacen):
     db.add(Atencion(id_paciente=seed["carlos"].id_paciente, fecha_atencion=date(2026, 1, 5)))
     db.flush()
-    body = client.get(f"/api/v1/pacientes/{seed['carlos'].id_paciente}/expediente").json()
+    body = client.get(f"/api/v1/pacientes/{seed['carlos'].public_id}/expediente").json()
     (atencion,) = body["atenciones"]
     assert atencion["fecha_atencion"] == "2026-01-05" and atencion["diagnosticos_bucales"] == []
     assert atencion["diagnostico_hospitalario"] is None and atencion["imagenes"] == []

@@ -58,11 +58,11 @@ def buscar(
         todas = imagenes_de.get(paciente.id_paciente, [])
         items.append(
             EnfermedadPacienteOut(
-                id_paciente=paciente.id_paciente,
+                id_paciente=paciente.public_id,
                 codigo_paciente=codigo_paciente(paciente.id_paciente),
                 documento_identidad=paciente.documento_identidad,
                 nombre=paciente.nombre,
-                id_atencion=atencion.id_atencion,
+                id_atencion=atencion.public_id,
                 fecha_atencion=atencion.fecha_atencion,
                 coincide_en=coincide,
                 diagnostico_hospitalario=hosp.descripcion_original if hosp else None,

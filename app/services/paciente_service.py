@@ -5,6 +5,7 @@ Auditoría de consultas/modificaciones (regla 6) se conecta en Sprint 4 vía mid
 """
 
 from datetime import date
+from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -27,10 +28,10 @@ def _edad(nacimiento: date | None) -> int | None:
     return hoy.year - nacimiento.year - ((hoy.month, hoy.day) < (nacimiento.month, nacimiento.day))
 
 
-def _a_salida(db: Session, p: Paciente) -> PacienteOut:
+def a_salida(db: Session, p: Paciente) -> PacienteOut:
     total, ultima, aseguradora = paciente_repo.resumen_atenciones(db, p.id_paciente)
     return PacienteOut(
-        id_paciente=p.id_paciente,
+        id_paciente=p.public_id,
         codigo=codigo_paciente(p.id_paciente),
         tipo_documento=p.tipo_documento,
         documento_identidad=p.documento_identidad,
@@ -52,7 +53,7 @@ def listar(db: Session, *, page: int, page_size: int, **filtros) -> Page[Pacient
     filas, total = paciente_repo.listar(db, page=page, page_size=page_size, **filtros)
     items = [
         PacienteListItem(
-            id_paciente=p.id_paciente,
+            id_paciente=p.public_id,
             codigo=codigo_paciente(p.id_paciente),
             tipo_documento=p.tipo_documento,
             documento_identidad=p.documento_identidad,
@@ -65,11 +66,11 @@ def listar(db: Session, *, page: int, page_size: int, **filtros) -> Page[Pacient
     return Page(items=items, total=total, page=page, page_size=page_size)
 
 
-def obtener(db: Session, id_paciente: int) -> PacienteOut:
+def obtener(db: Session, id_paciente: UUID) -> PacienteOut:
     p = paciente_repo.obtener(db, id_paciente)
     if p is None:
         raise NotFoundError("Paciente no encontrado")
-    return _a_salida(db, p)
+    return a_salida(db, p)
 
 
 def crear(db: Session, datos: PacienteCreate) -> PacienteOut:
@@ -81,10 +82,10 @@ def crear(db: Session, datos: PacienteCreate) -> PacienteOut:
     except IntegrityError as exc:  # carrera entre dos altas simultáneas
         db.rollback()
         raise ConflictError("Ya existe un paciente con ese documento de identidad") from exc
-    return _a_salida(db, p)
+    return a_salida(db, p)
 
 
-def actualizar(db: Session, id_paciente: int, datos: PacienteUpdate) -> PacienteOut:
+def actualizar(db: Session, id_paciente: UUID, datos: PacienteUpdate) -> PacienteOut:
     p = paciente_repo.obtener(db, id_paciente)
     if p is None:
         raise NotFoundError("Paciente no encontrado")
@@ -92,4 +93,4 @@ def actualizar(db: Session, id_paciente: int, datos: PacienteUpdate) -> Paciente
         setattr(p, campo, valor)
     db.commit()
     db.refresh(p)
-    return _a_salida(db, p)
+    return a_salida(db, p)

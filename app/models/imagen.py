@@ -4,9 +4,10 @@ Regla 4: toda imagen pertenece, como m√≠nimo, a un paciente. Regla 5: borrado l√
 Regla 7: la base solo guarda la CLAVE del objeto; el acceso es siempre por enlace temporal firmado.
 """
 
+import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, Uuid, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,6 +18,9 @@ class ImagenClinica(Base):
     __tablename__ = "imagen_clinica"
 
     id_imagen: Mapped[int] = mapped_column(primary_key=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, server_default=text("gen_random_uuid()"), unique=True
+    )  # lo que expone la API (v1.5)
     id_paciente: Mapped[int] = mapped_column(ForeignKey("paciente.id_paciente"))
     id_atencion: Mapped[int | None] = mapped_column(ForeignKey("atencion.id_atencion"))
     id_diagnostico_bucal: Mapped[int | None] = mapped_column(ForeignKey("diagnostico_bucal.id_diagnostico_bucal"))

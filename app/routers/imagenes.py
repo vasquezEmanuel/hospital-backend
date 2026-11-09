@@ -6,6 +6,7 @@ antes de ejecutarse) y 7 (solo enlaces firmados temporales).
 """
 
 from datetime import date
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
@@ -36,8 +37,8 @@ router = APIRouter(
 
 @router.get("", response_model=Page[ImagenOut], summary="Listar imágenes clínicas activas")
 def listar_imagenes(
-    id_paciente: int | None = Query(None, ge=1, description="Filtro 'Paciente' (por identificador)"),
-    id_atencion: int | None = Query(None, ge=1, description="Solo las imágenes de esa atención"),
+    id_paciente: UUID | None = Query(None, description="Filtro 'Paciente' (identificador público)"),
+    id_atencion: UUID | None = Query(None, description="Solo las imágenes de esa atención (identificador público)"),
     q: str | None = Query(None, description="Paciente por nombre o documento", max_length=100),
     diagnostico: str | None = Query(None, description="Filtro 'Diagnóstico': código CIE-10 (cod_4)", max_length=10),
     fecha_desde: date | None = Query(None, description="Cargadas desde esta fecha (filtro 'Fecha')"),
@@ -90,9 +91,11 @@ def listar_imagenes(
 )
 def subir_imagen(
     archivo: UploadFile = File(..., description="La imagen"),
-    id_paciente: int = Form(..., ge=1, description="Obligatorio: toda imagen pertenece a un paciente"),
-    id_atencion: int | None = Form(None, ge=1, description="Opcional: atención en la que se tomó"),
-    id_diagnostico_bucal: int | None = Form(None, ge=1, description="Opcional: diagnóstico bucal que ilustra"),
+    id_paciente: UUID = Form(
+        ..., description="Obligatorio: toda imagen pertenece a un paciente (identificador público)"
+    ),
+    id_atencion: UUID | None = Form(None, description="Opcional: atención en la que se tomó"),
+    id_diagnostico_bucal: UUID | None = Form(None, description="Opcional: diagnóstico bucal que ilustra"),
     db: Session = Depends(get_db),
     almacen: Almacenamiento = Depends(get_almacenamiento),
     settings: Settings = Depends(get_settings),
@@ -130,7 +133,7 @@ def subir_imagen(
     responses={404: {"model": ErrorResponse}},
 )
 def obtener_imagen(
-    id_imagen: int,
+    id_imagen: UUID,
     db: Session = Depends(get_db),
     almacen: Almacenamiento = Depends(get_almacenamiento),
     auditor: Auditor = Depends(get_auditor),
@@ -148,7 +151,7 @@ def obtener_imagen(
     summary="Inactivar una imagen (borrado lógico: el archivo y su registro se conservan)",
     responses={404: {"model": ErrorResponse}},
 )
-def inactivar_imagen(id_imagen: int, db: Session = Depends(get_db), auditor: Auditor = Depends(get_auditor)):
+def inactivar_imagen(id_imagen: UUID, db: Session = Depends(get_db), auditor: Auditor = Depends(get_auditor)):
     auditor.registrar("inactivar_imagen", "imagen", id_imagen=id_imagen)
     try:
         imagen_service.inactivar(db, id_imagen)
