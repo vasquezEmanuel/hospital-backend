@@ -63,6 +63,35 @@ def test_la_api_puede_leer_crear_y_modificar_pacientes_e_imagenes(api):
     assert api.execute(text("SELECT count(*) FROM auditoria")).scalar_one() >= 1
 
 
+def test_la_api_puede_registrar_atenciones_y_administrar_catalogos(api):
+    """Sprint 7: altas de atención (con diagnósticos y tratamientos) y alta/edición de catálogos."""
+    pac = api.execute(
+        text("INSERT INTO paciente (documento_identidad, nombre) VALUES ('9990002', 'Prueba S7') RETURNING id_paciente")
+    ).scalar_one()
+    aseg = api.execute(
+        text("INSERT INTO aseguradora (nombre) VALUES ('Aseg Prueba') RETURNING id_aseguradora")
+    ).scalar_one()
+    trat = api.execute(
+        text("INSERT INTO tratamiento (nombre) VALUES ('Trat Prueba') RETURNING id_tratamiento")
+    ).scalar_one()
+    api.execute(text("INSERT INTO profesional (nombre, identificacion, correo) VALUES ('Dr Prueba', '777', 'p@x.co')"))
+    api.execute(text("UPDATE aseguradora SET activo = FALSE WHERE id_aseguradora = :i"), {"i": aseg})
+    api.execute(text("UPDATE tratamiento SET nombre = 'Trat Editado' WHERE id_tratamiento = :i"), {"i": trat})
+    api.execute(text("UPDATE profesional SET activo = FALSE WHERE identificacion = '777'"))
+    atencion = api.execute(
+        text("INSERT INTO atencion (id_paciente, fecha_atencion) VALUES (:p, now()) RETURNING id_atencion"), {"p": pac}
+    ).scalar_one()
+    api.execute(
+        text("INSERT INTO diagnostico_hospitalario (id_atencion, descripcion_original) VALUES (:a, 'x')"),
+        {"a": atencion},
+    )
+    api.execute(text("INSERT INTO diagnostico_bucal (id_atencion, descripcion) VALUES (:a, 'x')"), {"a": atencion})
+    api.execute(
+        text("INSERT INTO atencion_x_tratamiento (id_atencion, id_tratamiento) VALUES (:a, :t)"),
+        {"a": atencion, "t": trat},
+    )
+
+
 @pytest.mark.parametrize(
     "sql",
     [
@@ -74,7 +103,12 @@ def test_la_api_puede_leer_crear_y_modificar_pacientes_e_imagenes(api):
         "TRUNCATE auditoria",
         "INSERT INTO cie10 (cod_4, descripcion_4) VALUES ('Z999', 'no debe')",
         "UPDATE cie10 SET descripcion_4 = 'no debe'",
-        "INSERT INTO atencion (id_paciente, fecha_atencion) VALUES (1, now())",
+        "UPDATE atencion SET observaciones = 'no debe'",
+        "DELETE FROM atencion",
+        "DELETE FROM diagnostico_bucal",
+        "UPDATE diagnostico_bucal SET descripcion = 'no debe'",
+        "DELETE FROM aseguradora",
+        "DELETE FROM profesional",
         "SELECT * FROM alembic_version",
         "DROP TABLE paciente",
         "CREATE TABLE intruso (id int)",

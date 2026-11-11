@@ -1,4 +1,4 @@
-"""Entidades aseguradora y profesional (schema.sql). Necesarias como FK de atencion.
+"""Entidades aseguradora, profesional y tratamiento (schema.sql): catálogos que la atención referencia.
 
 Regla: roles NO viven aquí; profesional.auth_id enlaza con el IdP (sección 4 del prompt).
 """
@@ -26,4 +26,14 @@ class Profesional(Base):
     correo: Mapped[str] = mapped_column(String(150), unique=True)
     especializacion: Mapped[str | None] = mapped_column(String(150))
     auth_id: Mapped[str | None] = mapped_column(String(255), unique=True)
+    activo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Tratamiento(Base):
+    """Catálogo administrable (v1.2): "Operatoria", "RX"... Se inactiva, no se borra. Lista oficial por validar."""
+
+    __tablename__ = "tratamiento"
+
+    id_tratamiento: Mapped[int] = mapped_column(primary_key=True)
+    nombre: Mapped[str] = mapped_column(String(100), unique=True)
     activo: Mapped[bool] = mapped_column(Boolean, default=True)

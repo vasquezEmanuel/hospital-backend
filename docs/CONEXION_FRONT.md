@@ -109,7 +109,43 @@ Reglas para el front:
 - Para **mostrar** al usuario sigue usando `codigo` (p. ej. `P-007`) y los demás campos legibles. El `codigo` es solo para mostrar y buscar en el cuadro de texto: **no** sirve como identificador de ruta.
 - Si el id no existe, la respuesta es 404; si no tiene forma de UUID, 422.
 
-## 5. Cosas que suelen fallar
+## 5. Atenciones y catálogos (Sprint 7)
+
+Todas las rutas llevan `Authorization: Bearer <token>`. Leer: odontólogo o administrador. Crear/editar catálogos: solo administrador.
+
+| Pantalla | Llamada |
+|---|---|
+| Atenciones (tabla) | `GET /api/v1/atenciones?q=&cod_4=&id_paciente=<uuid>&id_aseguradora=&fecha_desde=&fecha_hasta=&page=&page_size=` |
+| Nueva atención (listas desplegables) | `GET /api/v1/aseguradoras` · `GET /api/v1/tratamientos` · `GET /api/v1/profesionales` · `GET /api/v1/profesionales/yo` |
+| Guardar atención | `POST /api/v1/atenciones` (JSON de abajo) → 201 con el detalle |
+| Detalle de atención | `GET /api/v1/atenciones/{id_atencion}` (UUID) |
+| Administrar catálogos (admin) | `POST` y `PATCH /{id}` en `/aseguradoras`, `/tratamientos`, `/profesionales`; inactivar = `PATCH {"activo": false}` |
+
+```json
+{
+  "id_paciente": "<uuid del paciente>",
+  "fecha_atencion": "2026-10-01",
+  "hora_atencion": "10:30:00",
+  "id_aseguradora": 1,
+  "ubicacion": "Piso 3",
+  "id_profesional": null,
+  "profesional_texto": null,
+  "plan_tratamiento": "Operatoria y RX",
+  "observaciones": null,
+  "ids_tratamientos": [1, 2],
+  "diagnostico_hospitalario": { "descripcion_original": "Tumor de colon", "cod_4": "C187" },
+  "diagnosticos_bucales": [ { "descripcion": "Caries de la dentina", "codigos": ["K021"] } ]
+}
+```
+
+- Los códigos CIE-10 aceptan con o sin punto (`K02.1` o `K021`).
+- Cada diagnóstico bucal necesita **al menos un código odontológico**; el de hospitalización puede ser cualquier código (o ir solo con texto).
+- Si no se envía `id_profesional` ni `profesional_texto`, se usa el profesional enlazado al usuario que inicia sesión (`profesional.auth_id` = su id en Supabase Auth).
+- La fecha no puede ser futura. Errores: 404 paciente inexistente, 422 catálogo inexistente/inactivo o código no válido.
+- Las imágenes de la atención se suben después con `POST /api/v1/imagenes` enviando `id_atencion` (y opcionalmente `id_diagnostico_bucal`).
+- El expediente y el detalle ahora incluyen `codigo_atencion` (ej. `A007`, solo para mostrar) y `tratamientos`.
+
+## 6. Cosas que suelen fallar
 
 | Síntoma en el navegador | Causa | Solución |
 |---|---|---|
@@ -121,7 +157,7 @@ Reglas para el front:
 | 422 al abrir una ficha o un expediente | se está usando un número o el `codigo` (`P-007`) en la ruta | usar `id_paciente` (UUID) de la respuesta del listado |
 | La imagen no carga | el enlace caducó (5 min) | volver a pedir el listado |
 
-## 6. Orden recomendado para integrar
+## 7. Orden recomendado para integrar
 
 1. Conectar login, listar pacientes, crear paciente y subir imagen.
 2. Cuando el front esté desplegado: agregar su dirección `https://...` a `CORS_ORIGINS`.

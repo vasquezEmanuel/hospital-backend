@@ -33,13 +33,27 @@ DO $$ DECLARE t text; BEGIN
   END LOOP;
 END $$;
 
--- ESCRITURAS DE LA API (hoy): pacientes e imágenes se crean y modifican; la auditoría solo se inserta.
--- Cuando un sprint agregue escrituras (p. ej. atenciones en el Sprint 7), se añaden aquí y en la sección 4.
+-- ESCRITURAS DE LA API: pacientes e imágenes se crean y modifican; la auditoría solo se inserta; (Sprint 7) las
+-- atenciones se crean con sus diagnósticos y tratamientos (solo INSERT: una atención registrada no se reescribe), y los
+-- catálogos aseguradora / tratamiento / profesional se crean y editan (inactivar = UPDATE de `activo`).
+-- Cuando un sprint agregue escrituras, se añaden aquí y en la sección 4.
 GRANT INSERT, UPDATE ON public.paciente, public.imagen_clinica TO hospital_api;
 GRANT INSERT ON public.auditoria TO hospital_api;
-GRANT USAGE ON SEQUENCE public.paciente_id_paciente_seq,
-                        public.imagen_clinica_id_imagen_seq,
-                        public.auditoria_id_evento_seq TO hospital_api;
+GRANT INSERT ON public.atencion, public.diagnostico_hospitalario, public.diagnostico_bucal,
+                public.cie10_x_diagnostico_bucal, public.atencion_x_tratamiento TO hospital_api;
+GRANT INSERT, UPDATE ON public.aseguradora, public.tratamiento, public.profesional TO hospital_api;
+-- Secuencias (llaves autonumeradas) de las tablas donde la API inserta; se buscan por tabla, no por nombre.
+DO $$ DECLARE t text; s text; BEGIN
+  FOREACH t IN ARRAY ARRAY['paciente','imagen_clinica','auditoria','atencion','diagnostico_hospitalario',
+                           'diagnostico_bucal','aseguradora','tratamiento','profesional'] LOOP
+    FOR s IN SELECT pg_get_serial_sequence('public.' || t, a.attname)
+             FROM pg_attribute a
+             WHERE a.attrelid = ('public.' || t)::regclass AND a.attnum > 0 AND NOT a.attisdropped
+               AND pg_get_serial_sequence('public.' || t, a.attname) IS NOT NULL LOOP
+      EXECUTE format('GRANT USAGE ON SEQUENCE %s TO hospital_api', s);
+    END LOOP;
+  END LOOP;
+END $$;
 -- Nunca se concede DELETE ni TRUNCATE: el borrado es lógico (regla 5) y la auditoría es inmutable (regla 6).
 
 -- 3) Row Level Security: activada en TODAS las tablas. Sin políticas, nadie la atraviesa (ni la API pública de
@@ -70,3 +84,16 @@ CREATE POLICY api_actualizar ON public.imagen_clinica FOR UPDATE TO hospital_api
 
 DROP POLICY IF EXISTS api_insertar ON public.auditoria;
 CREATE POLICY api_insertar ON public.auditoria FOR INSERT TO hospital_api WITH CHECK (true);
+
+-- Sprint 7: atenciones, sus diagnósticos y tratamientos (solo INSERT) y catálogos (INSERT/UPDATE).
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['atencion','diagnostico_hospitalario','diagnostico_bucal','cie10_x_diagnostico_bucal',
+                           'atencion_x_tratamiento','aseguradora','tratamiento','profesional'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS api_insertar ON public.%I', t);
+    EXECUTE format('CREATE POLICY api_insertar ON public.%I FOR INSERT TO hospital_api WITH CHECK (true)', t);
+  END LOOP;
+  FOREACH t IN ARRAY ARRAY['aseguradora','tratamiento','profesional'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS api_actualizar ON public.%I', t);
+    EXECUTE format('CREATE POLICY api_actualizar ON public.%I FOR UPDATE TO hospital_api USING (true) WITH CHECK (true)', t);
+  END LOOP;
+END $$;

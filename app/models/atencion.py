@@ -3,12 +3,20 @@
 import uuid
 from datetime import date, datetime, time
 
-from sqlalchemy import Date, DateTime, ForeignKey, String, Text, Time, Uuid, func, text
+from sqlalchemy import Column, Date, DateTime, ForeignKey, String, Table, Text, Time, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.catalogos import Aseguradora, Profesional
+from app.models.catalogos import Aseguradora, Profesional, Tratamiento
 from app.models.paciente import Paciente
+
+# N:M atención <-> tratamiento (v1.2): "Operatoria · RX · CP · DTT" en el detalle de atención.
+atencion_x_tratamiento = Table(
+    "atencion_x_tratamiento",
+    Base.metadata,
+    Column("id_atencion", ForeignKey("atencion.id_atencion"), primary_key=True),
+    Column("id_tratamiento", ForeignKey("tratamiento.id_tratamiento"), primary_key=True),
+)
 
 
 class Atencion(Base):
@@ -32,3 +40,6 @@ class Atencion(Base):
     paciente: Mapped[Paciente] = relationship()
     aseguradora: Mapped[Aseguradora | None] = relationship()
     profesional: Mapped[Profesional | None] = relationship()
+    tratamientos: Mapped[list[Tratamiento]] = relationship(
+        secondary=atencion_x_tratamiento, order_by=Tratamiento.nombre
+    )
