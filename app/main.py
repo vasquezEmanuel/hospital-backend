@@ -8,7 +8,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import archivos, auditoria, cie10, enfermedades, expediente, health, imagenes, pacientes
+from app.routers import (
+    archivos,
+    atenciones,
+    auditoria,
+    catalogos,
+    cie10,
+    enfermedades,
+    expediente,
+    health,
+    imagenes,
+    pacientes,
+)
 
 DESCRIPCION = """
 API del **Sistema de Gestión de Pacientes, Enfermedades e Imágenes Clínicas** — Hospital Alma Mater, Odontología.
@@ -44,6 +55,10 @@ def create_app() -> FastAPI:
     app.include_router(expediente.router, prefix="/api/v1")
     app.include_router(imagenes.router, prefix="/api/v1")
     app.include_router(archivos.router, prefix="/api/v1")
+    app.include_router(atenciones.router, prefix="/api/v1")
+    app.include_router(catalogos.aseguradoras, prefix="/api/v1")
+    app.include_router(catalogos.tratamientos, prefix="/api/v1")
+    app.include_router(catalogos.profesionales, prefix="/api/v1")
     app.include_router(cie10.router, prefix="/api/v1")
     app.include_router(enfermedades.router, prefix="/api/v1")
     app.include_router(auditoria.router, prefix="/api/v1")

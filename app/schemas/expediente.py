@@ -30,8 +30,14 @@ class DiagnosticoBucalOut(BaseModel):
     codificado: bool  # False = solo texto, pendiente de codificar a CIE-10
 
 
+class TratamientoOut(BaseModel):
+    id_tratamiento: int
+    nombre: str
+
+
 class AtencionExpediente(BaseModel):
     id_atencion: UUID
+    codigo_atencion: str  # ID visible "A001" (solo para mostrar)
     fecha_atencion: date
     hora_atencion: time | None = None
     aseguradora: str | None = None
@@ -42,6 +48,7 @@ class AtencionExpediente(BaseModel):
     registrada_en: datetime
     diagnostico_hospitalario: DiagnosticoHospitalarioOut | None = None
     diagnosticos_bucales: list[DiagnosticoBucalOut]
+    tratamientos: list[TratamientoOut] = []
     imagenes: list[ImagenOut]
 
 

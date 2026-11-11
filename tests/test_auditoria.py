@@ -14,7 +14,7 @@ from app.main import app
 from app.middleware.auditoria import get_auditor
 from app.models import Profesional
 from app.repositories.imagen_repo import COLOMBIA
-from app.routers import auditoria, enfermedades, expediente, imagenes, pacientes
+from app.routers import atenciones, auditoria, enfermedades, expediente, imagenes, pacientes
 from app.services import auditoria_service
 from app.services.almacenamiento import AlmacenamientoLocal, get_almacenamiento
 
@@ -56,9 +56,16 @@ def _eventos(db):
 def test_cada_ruta_de_datos_de_pacientes_declara_el_auditor():
     # Se recorren los routers (interfaz pública de FastAPI), no app.routes, cuya forma interna cambia entre versiones.
     # Un router nuevo que toque datos de pacientes debe agregarse aquí: por eso la lista es explícita.
-    routers = (pacientes.router, expediente.router, imagenes.router, enfermedades.router, auditoria.router)
+    routers = (
+        pacientes.router,
+        expediente.router,
+        imagenes.router,
+        enfermedades.router,
+        auditoria.router,
+        atenciones.router,
+    )
     rutas = [r for router in routers for r in router.routes if isinstance(r, APIRoute)]
-    assert len(rutas) == 11  # si se agrega una ruta, esta prueba obliga a decidir cómo se audita
+    assert len(rutas) == 14  # si se agrega una ruta, esta prueba obliga a decidir cómo se audita
     sin_auditor = [
         f"{sorted(r.methods)} {r.path}"
         for r in rutas
