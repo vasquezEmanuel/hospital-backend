@@ -42,10 +42,15 @@ GRANT INSERT ON public.auditoria TO hospital_api;
 GRANT INSERT ON public.atencion, public.diagnostico_hospitalario, public.diagnostico_bucal,
                 public.cie10_x_diagnostico_bucal, public.atencion_x_tratamiento TO hospital_api;
 GRANT INSERT, UPDATE ON public.aseguradora, public.tratamiento, public.profesional TO hospital_api;
+-- Sprint 8: importaciones. cie10 solo INSERT (el catálogo se carga una vez por el endpoint; editarlo cambia qué códigos
+-- acepta la regla 2, así que UPDATE/DELETE siguen siendo solo del propietario, por consola).
+GRANT INSERT ON public.cie10 TO hospital_api;
+GRANT INSERT, UPDATE ON public.importacion, public.importacion_fila TO hospital_api;
 -- Secuencias (llaves autonumeradas) de las tablas donde la API inserta; se buscan por tabla, no por nombre.
 DO $$ DECLARE t text; s text; BEGIN
   FOREACH t IN ARRAY ARRAY['paciente','imagen_clinica','auditoria','atencion','diagnostico_hospitalario',
-                           'diagnostico_bucal','aseguradora','tratamiento','profesional'] LOOP
+                           'diagnostico_bucal','aseguradora','tratamiento','profesional',
+                           'importacion','importacion_fila'] LOOP
     FOR s IN SELECT pg_get_serial_sequence('public.' || t, a.attname)
              FROM pg_attribute a
              WHERE a.attrelid = ('public.' || t)::regclass AND a.attnum > 0 AND NOT a.attisdropped
@@ -93,6 +98,18 @@ DO $$ DECLARE t text; BEGIN
     EXECUTE format('CREATE POLICY api_insertar ON public.%I FOR INSERT TO hospital_api WITH CHECK (true)', t);
   END LOOP;
   FOREACH t IN ARRAY ARRAY['aseguradora','tratamiento','profesional'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS api_actualizar ON public.%I', t);
+    EXECUTE format('CREATE POLICY api_actualizar ON public.%I FOR UPDATE TO hospital_api USING (true) WITH CHECK (true)', t);
+  END LOOP;
+END $$;
+
+-- Sprint 8: importaciones (cie10 solo INSERT; importacion e importacion_fila INSERT/UPDATE).
+DO $$ DECLARE t text; BEGIN
+  FOREACH t IN ARRAY ARRAY['cie10','importacion','importacion_fila'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS api_insertar ON public.%I', t);
+    EXECUTE format('CREATE POLICY api_insertar ON public.%I FOR INSERT TO hospital_api WITH CHECK (true)', t);
+  END LOOP;
+  FOREACH t IN ARRAY ARRAY['importacion','importacion_fila'] LOOP
     EXECUTE format('DROP POLICY IF EXISTS api_actualizar ON public.%I', t);
     EXECUTE format('CREATE POLICY api_actualizar ON public.%I FOR UPDATE TO hospital_api USING (true) WITH CHECK (true)', t);
   END LOOP;

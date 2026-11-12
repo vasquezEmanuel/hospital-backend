@@ -92,6 +92,20 @@ def test_la_api_puede_registrar_atenciones_y_administrar_catalogos(api):
     )
 
 
+def test_la_api_puede_importar_pero_el_catalogo_cie10_solo_se_inserta(api):
+    """Sprint 8: el catálogo se carga por la API (INSERT) pero no se edita (UPDATE queda para el propietario)."""
+    api.execute(text("INSERT INTO cie10 (cod_4, cod_3, descripcion_4) VALUES ('Z998', 'Z99', 'solo prueba')"))
+    imp = api.execute(
+        text("INSERT INTO importacion (tipo, nombre_archivo) VALUES ('cie10', 'x.xls') RETURNING id_importacion")
+    ).scalar_one()
+    api.execute(text("UPDATE importacion SET estado = 'completado' WHERE id_importacion = :i"), {"i": imp})
+    api.execute(
+        text("INSERT INTO importacion_fila (id_importacion, numero_fila, motivo, datos) VALUES (:i, 2, 'm', '{}')"),
+        {"i": imp},
+    )
+    api.execute(text("UPDATE importacion_fila SET estado = 'resuelta' WHERE id_importacion = :i"), {"i": imp})
+
+
 @pytest.mark.parametrize(
     "sql",
     [
@@ -101,8 +115,10 @@ def test_la_api_puede_registrar_atenciones_y_administrar_catalogos(api):
         "UPDATE auditoria SET accion = 'x'",
         "DELETE FROM auditoria",
         "TRUNCATE auditoria",
-        "INSERT INTO cie10 (cod_4, descripcion_4) VALUES ('Z999', 'no debe')",
         "UPDATE cie10 SET descripcion_4 = 'no debe'",
+        "DELETE FROM cie10",
+        "DELETE FROM importacion",
+        "DELETE FROM importacion_fila",
         "UPDATE atencion SET observaciones = 'no debe'",
         "DELETE FROM atencion",
         "DELETE FROM diagnostico_bucal",

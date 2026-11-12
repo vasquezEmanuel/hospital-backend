@@ -7,6 +7,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+COPY etl ./etl
 COPY alembic ./alembic
 COPY alembic.ini .
 

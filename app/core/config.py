@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     storage_signing_secret: str = ""  # firma los enlaces del almacenamiento local; si falta, se usa auth_jwt_secret
     signed_url_ttl_seconds: int = 300  # regla 7: el acceso a imágenes es solo por enlaces temporales firmados
     max_upload_mb: int = 15
+    max_import_mb: int = 25  # Sprint 8: archivos Excel/CSV de importación
+    max_import_images: int = 50  # Sprint 8: imágenes por solicitud de importación en lote
     public_base_url: str = "http://localhost:8000"  # prefijo de los enlaces del almacenamiento local
 
     @property

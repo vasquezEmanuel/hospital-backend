@@ -145,7 +145,32 @@ Todas las rutas llevan `Authorization: Bearer <token>`. Leer: odontólogo o admi
 - Las imágenes de la atención se suben después con `POST /api/v1/imagenes` enviando `id_atencion` (y opcionalmente `id_diagnostico_bucal`).
 - El expediente y el detalle ahora incluyen `codigo_atencion` (ej. `A007`, solo para mostrar) y `tratamientos`.
 
-## 6. Cosas que suelen fallar
+## 6. Importar datos e imágenes en lote (Sprint 8)
+
+Pantalla "Importar datos". **Solo rol `administrador`** (con el rol odontólogo responde 403). Los archivos se envían como `multipart/form-data`, campo `archivo`; **no** pongas `Content-Type` a mano (el navegador agrega el límite del formulario).
+
+| Acción | Llamada |
+|---|---|
+| Cargar el catálogo CIE-10 (**una sola vez**) | `POST /api/v1/importaciones/catalogo-cie10` — Excel original `.xls`/`.xlsx`; los odontológicos se leen del resaltado o subrayado de las celdas. Con el catálogo ya cargado responde **409**. |
+| Importar atenciones y pacientes | `POST /api/v1/importaciones/atenciones` — Excel o CSV. Necesita el catálogo cargado. Repetir el archivo no duplica nada. |
+| Historial | `GET /api/v1/importaciones` · `GET /api/v1/importaciones/{id}` |
+| Cola de revisión (filas que no se pudieron cargar) | `GET /api/v1/importaciones/{id}/filas?estado=revision` |
+| Marcar una fila como resuelta | `PATCH /api/v1/importaciones/{id}/filas/{id_fila}` con `{"estado":"resuelta"}` |
+| Subir varias imágenes de un paciente | `POST /api/v1/imagenes/lote` — campos `id_paciente` (UUID), `archivos` (repetido, hasta 50) y opcional `id_atencion` |
+
+```js
+const form = new FormData();
+form.append("archivo", fileInput.files[0]);          // File del <input type="file">
+const r = await fetch(`${API}/api/v1/importaciones/catalogo-cie10`, {
+  method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form,
+});
+```
+
+La respuesta de una importación trae `total`, `insertados`, `omitidos`, `rechazados`, `odontologicos` (catálogo), `pacientes_nuevos`, `bucales_sin_codigo` y `ejemplos` (primeros motivos de revisión). Errores: 413 archivo muy grande (máx. 25 MB), 415 no es Excel/CSV, 422 estructura inesperada. La carga del catálogo puede tardar unos segundos: muestra un indicador de espera.
+
+En el lote de imágenes la respuesta es 200 aunque falle alguna: cada elemento de `resultados` trae `imagen` o `error` (duplicada, formato no permitido…).
+
+## 7. Cosas que suelen fallar
 
 | Síntoma en el navegador | Causa | Solución |
 |---|---|---|
@@ -157,7 +182,7 @@ Todas las rutas llevan `Authorization: Bearer <token>`. Leer: odontólogo o admi
 | 422 al abrir una ficha o un expediente | se está usando un número o el `codigo` (`P-007`) en la ruta | usar `id_paciente` (UUID) de la respuesta del listado |
 | La imagen no carga | el enlace caducó (5 min) | volver a pedir el listado |
 
-## 7. Orden recomendado para integrar
+## 8. Orden recomendado para integrar
 
 1. Conectar login, listar pacientes, crear paciente y subir imagen.
 2. Cuando el front esté desplegado: agregar su dirección `https://...` a `CORS_ORIGINS`.

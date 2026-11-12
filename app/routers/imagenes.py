@@ -17,6 +17,7 @@ from app.db.session import get_db
 from app.middleware.auditoria import Auditor, get_auditor
 from app.schemas.common import ErrorResponse, Page
 from app.schemas.imagen import ImagenOut
+from app.schemas.importacion import LoteImagenesOut, ResultadoImagenLote
 from app.services import auditoria_service, imagen_service
 from app.services.almacenamiento import Almacenamiento, get_almacenamiento
 from app.services.errors import (
@@ -124,6 +125,60 @@ def subir_imagen(
         raise HTTPException(415, str(exc)) from exc
     except DatosInvalidosError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.post(
+    "/lote",
+    response_model=LoteImagenesOut,
+    summary="Subir varias imágenes de un mismo paciente de una vez",
+    description=(
+        "Cada archivo se procesa por separado: si uno falla (formato, tamaño, duplicado) los demás se suben igual y el "
+        "resultado indica el error de cada uno. Máximo de archivos por solicitud: MAX_IMPORT_IMAGES (50)."
+    ),
+    responses={
+        404: {"model": ErrorResponse, "description": "El paciente no existe"},
+        413: {"model": ErrorResponse, "description": "Demasiados archivos en una solicitud"},
+        422: {"model": ErrorResponse, "description": "Atención que no corresponde al paciente"},
+    },
+)
+def subir_imagenes_lote(
+    archivos: list[UploadFile] = File(..., description="Las imágenes (JPEG, PNG o WebP)"),
+    id_paciente: UUID = Form(..., description="Paciente dueño de todas las imágenes"),
+    id_atencion: UUID | None = Form(None, description="Opcional: atención en la que se tomaron"),
+    db: Session = Depends(get_db),
+    almacen: Almacenamiento = Depends(get_almacenamiento),
+    settings: Settings = Depends(get_settings),
+    auditor: Auditor = Depends(get_auditor),
+):
+    if len(archivos) > settings.max_import_images:
+        raise HTTPException(413, f"Máximo {settings.max_import_images} imágenes por solicitud")
+    auditor.registrar("subir_imagenes_lote", "imagen", id_paciente=id_paciente, detalle={"cantidad": len(archivos)})
+    resultados: list[ResultadoImagenLote] = []
+    for archivo in archivos:
+        contenido = archivo.file.read(settings.max_upload_mb * 1024 * 1024 + 1)
+        try:
+            imagen = imagen_service.subir(
+                db,
+                almacen,
+                id_paciente=id_paciente,
+                id_atencion=id_atencion,
+                id_diagnostico_bucal=None,
+                nombre_original=archivo.filename,
+                contenido=contenido,
+            )
+            resultados.append(ResultadoImagenLote(nombre_archivo=archivo.filename, imagen=imagen))
+        except NotFoundError as exc:  # el paciente no existe: no tiene sentido seguir con el resto
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+        except DatosInvalidosError as exc:
+            if "atención" in str(exc).lower() or "diagnóstico" in str(exc).lower():
+                raise HTTPException(422, str(exc)) from exc
+            resultados.append(ResultadoImagenLote(nombre_archivo=archivo.filename, error=str(exc)))
+        except (ConflictError, ArchivoMuyGrandeError, ArchivoNoPermitidoError) as exc:
+            resultados.append(ResultadoImagenLote(nombre_archivo=archivo.filename, error=str(exc)))
+    subidas = sum(r.imagen is not None for r in resultados)
+    return LoteImagenesOut(
+        total=len(resultados), subidas=subidas, fallidas=len(resultados) - subidas, resultados=resultados
+    )
 
 
 @router.get(
