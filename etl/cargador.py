@@ -67,13 +67,13 @@ class ResultadoCarga:
 # ---------------------------------------------------------------- registro de la importación
 
 
-def _abrir_importacion(db: Session, tipo: str, archivo: str, total: int) -> int:
+def _abrir_importacion(db: Session, tipo: str, archivo: str, total: int, id_profesional: int | None = None) -> int:
     id_importacion = db.execute(
         text(
-            "INSERT INTO importacion (tipo, nombre_archivo, estado, total_registros) "
-            "VALUES (:tipo, :archivo, 'procesando', :total) RETURNING id_importacion"
+            "INSERT INTO importacion (tipo, nombre_archivo, estado, total_registros, id_profesional) "
+            "VALUES (:tipo, :archivo, 'procesando', :total, :prof) RETURNING id_importacion"
         ),
-        {"tipo": tipo, "archivo": archivo, "total": total},
+        {"tipo": tipo, "archivo": archivo, "total": total, "prof": id_profesional},
     ).scalar_one()
     db.commit()  # el registro queda aunque la carga falle después
     return id_importacion
@@ -119,12 +119,14 @@ def _registrar_rechazos(r: ResultadoCarga, rechazos: list[Rechazo]) -> None:
 # ---------------------------------------------------------------- catálogo CIE-10
 
 
-def cargar_catalogo(db: Session, ruta, herencia_categoria: bool = True) -> ResultadoCarga:
+def cargar_catalogo(
+    db: Session, ruta, herencia_categoria: bool = True, id_profesional: int | None = None, nombre: str | None = None
+) -> ResultadoCarga:
     """Inserta los códigos nuevos y actualiza los que cambiaron. Repetir la carga no duplica nada."""
     lectura = leer_catalogo(ruta, herencia_categoria)  # si el archivo no sirve, falla antes de tocar la base
-    resultado = ResultadoCarga("cie10", Path(ruta).name, total=len(lectura.filas) + len(lectura.rechazos))
+    resultado = ResultadoCarga("cie10", nombre or Path(ruta).name, total=len(lectura.filas) + len(lectura.rechazos))
     resultado.odontologicos = sum(f.es_odontologico for f in lectura.filas)
-    resultado.id_importacion = _abrir_importacion(db, "cie10", resultado.archivo, resultado.total)
+    resultado.id_importacion = _abrir_importacion(db, "cie10", resultado.archivo, resultado.total, id_profesional)
     try:
         existentes = {
             f.cod_4: (f.cod_3, f.descripcion_3, f.descripcion_4, f.es_odontologico)
@@ -374,14 +376,18 @@ def _procesar_fila(db: Session, fila: FilaAtencion, ctx: _Contexto) -> str:
     return "insertado"
 
 
-def cargar_atenciones(db: Session, ruta) -> ResultadoCarga:
+def cargar_atenciones(
+    db: Session, ruta, id_profesional: int | None = None, nombre: str | None = None
+) -> ResultadoCarga:
     """Carga la hoja de atenciones. Requiere el catálogo CIE-10 cargado. Repetir la carga no duplica atenciones."""
     lectura = leer_atenciones(ruta)
     ctx = _cargar_contexto(db)
     if not ctx.catalogo.por_codigo:
         raise ErrorFormato("El catálogo CIE-10 está vacío: cargue primero el catálogo (comando 'catalogo').")
-    resultado = ResultadoCarga("atenciones", Path(ruta).name, total=len(lectura.filas) + len(lectura.rechazos))
-    resultado.id_importacion = _abrir_importacion(db, "atenciones", resultado.archivo, resultado.total)
+    resultado = ResultadoCarga(
+        "atenciones", nombre or Path(ruta).name, total=len(lectura.filas) + len(lectura.rechazos)
+    )
+    resultado.id_importacion = _abrir_importacion(db, "atenciones", resultado.archivo, resultado.total, id_profesional)
     try:
         revision = list(lectura.rechazos)
         for fila in lectura.filas:
