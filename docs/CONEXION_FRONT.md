@@ -170,7 +170,30 @@ La respuesta de una importación trae `total`, `insertados`, `omitidos`, `rechaz
 
 En el lote de imágenes la respuesta es 200 aunque falle alguna: cada elemento de `resultados` trae `imagen` o `error` (duplicada, formato no permitido…).
 
-## 7. Cosas que suelen fallar
+## 7. Reportes e Inicio (Sprint 9)
+
+Rol odontólogo o administrador. Todos los filtros son opcionales y van en la URL.
+
+| Pantalla | Llamada |
+|---|---|
+| Inicio (KPIs, gráficos, últimas atenciones) | `GET /api/v1/inicio/resumen` |
+| Lista "Tipo de reporte" | `GET /api/v1/reportes/tipos` → `[{tipo, titulo}]` (8 tipos) |
+| Vista previa / "Generar reporte" | `GET /api/v1/reportes/{tipo}?fecha_desde=2026-09-01&fecha_hasta=2026-09-30&id_aseguradora=&cod_4=&id_profesional=` |
+| "Exportar Excel" | `GET /api/v1/reportes/{tipo}/excel` (mismos filtros): devuelve el `.xlsx` |
+| "Exportar PDF" / "Descargar PDF" | **Lo genera el front** con la respuesta de la vista previa (impresión del navegador o jsPDF). El backend no genera PDF. |
+
+Valores de `{tipo}`: `total_atenciones`, `atenciones_por_aseguradora`, `atenciones_por_diagnostico_hospitalario`, `distribucion_diagnosticos_bucales`, `tratamientos_registrados`, `atenciones_por_profesional`, `registros_por_fecha`, `relacion_hospitalario_bucal`.
+
+La respuesta del reporte trae `titulo`, `generado_en`, `totales` {pacientes, atenciones, imagenes}, `filas` [{etiqueta, etiqueta_secundaria, cantidad, porcentaje}], `columna_principal`/`columna_secundaria` (encabezados de la tabla), `hallazgo` (frase destacada) y `truncado` (máx. 200 filas). Errores: 404 tipo inexistente, 422 fecha inicial posterior a la final.
+
+Para descargar el Excel con el token usa `fetch` + `blob` (un enlace directo no envía el encabezado `Authorization`):
+```js
+const r = await fetch(`${API}/api/v1/reportes/${tipo}/excel?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+const url = URL.createObjectURL(await r.blob());
+Object.assign(document.createElement("a"), { href: url, download: `reporte_${tipo}.xlsx` }).click();
+```
+
+## 8. Cosas que suelen fallar
 
 | Síntoma en el navegador | Causa | Solución |
 |---|---|---|
@@ -182,7 +205,7 @@ En el lote de imágenes la respuesta es 200 aunque falle alguna: cada elemento d
 | 422 al abrir una ficha o un expediente | se está usando un número o el `codigo` (`P-007`) en la ruta | usar `id_paciente` (UUID) de la respuesta del listado |
 | La imagen no carga | el enlace caducó (5 min) | volver a pedir el listado |
 
-## 8. Orden recomendado para integrar
+## 9. Orden recomendado para integrar
 
 1. Conectar login, listar pacientes, crear paciente y subir imagen.
 2. Cuando el front esté desplegado: agregar su dirección `https://...` a `CORS_ORIGINS`.

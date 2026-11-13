@@ -20,6 +20,7 @@ from app.routers import (
     imagenes,
     importaciones,
     pacientes,
+    reportes,
 )
 
 DESCRIPCION = """
@@ -63,7 +64,11 @@ def create_app() -> FastAPI:
     app.include_router(cie10.router, prefix="/api/v1")
     app.include_router(enfermedades.router, prefix="/api/v1")
     app.include_router(importaciones.router, prefix="/api/v1")
+    app.include_router(reportes.router, prefix="/api/v1")
+    app.include_router(reportes.inicio, prefix="/api/v1")
     app.include_router(importaciones.router, prefix="/api/v1")
+    app.include_router(reportes.router, prefix="/api/v1")
+    app.include_router(reportes.inicio, prefix="/api/v1")
     app.include_router(auditoria.router, prefix="/api/v1")
     return app
 
