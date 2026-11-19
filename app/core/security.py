@@ -11,8 +11,10 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
+from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.db.session import get_db
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -100,21 +102,35 @@ def require_roles(*roles: str):
     return _checker
 
 
+def _exigir_cuenta_activa(db: Session, user: CurrentUser) -> None:
+    """Corte inmediato: un usuario con profesional enlazado e inactivo no entra aunque su token siga vigente.
+    Las cuentas sin profesional enlazado (p. ej. la del administrador inicial) no se ven afectadas."""
+    from app.repositories import catalogo_repo  # import local: evita ciclos core -> repositories
+
+    p = catalogo_repo.profesional_por_auth_id(db, user.sub)
+    if p is not None and not p.activo:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Cuenta desactivada")
+
+
 def require_clinical_staff(
     user: CurrentUser = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
 ) -> CurrentUser:
     """Odontólogo o administrador. Se usa en todos los endpoints clínicos."""
     if not user.roles.intersection({settings.role_odontologo, settings.role_administrador}):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Rol insuficiente para esta operación")
+    _exigir_cuenta_activa(db, user)
     return user
 
 
 def require_admin(
     user: CurrentUser = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
 ) -> CurrentUser:
     """Solo administrador (p. ej. consultar la auditoría). El rol llega en el token del proveedor de identidad."""
     if settings.role_administrador not in user.roles:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Se requiere el rol de administrador")
+    _exigir_cuenta_activa(db, user)
     return user

@@ -193,7 +193,39 @@ const url = URL.createObjectURL(await r.blob());
 Object.assign(document.createElement("a"), { href: url, download: `reporte_${tipo}.xlsx` }).click();
 ```
 
-## 8. Cosas que suelen fallar
+## 8. Cuentas de profesionales (pestaña "Gestión de profesionales")
+
+**Solo rol `administrador`** (odontólogo recibe 403). Una acción crea la cuenta de acceso y el profesional, ya enlazados. El rol vive en el proveedor de identidad, no en nuestra base.
+
+| Pantalla / acción | Llamada |
+|---|---|
+| Lista de la pestaña | `GET /api/v1/profesionales/gestion` → `[{id_profesional, nombre, identificacion, correo, especializacion, activo, tiene_cuenta, rol, cuenta_bloqueada}]` |
+| **Formulario de creación** | `POST /api/v1/profesionales/cuenta` |
+| Crear cuenta de un profesional que ya existe sin ella | `POST /api/v1/profesionales/{id}/cuenta` con `{"password": "...", "rol": "odontologo"}` |
+| Activar / desactivar | `PATCH /api/v1/profesionales/{id}` con `{"activo": false}` (bloquea también el acceso) |
+| Nueva contraseña (la define el administrador) | `PUT /api/v1/profesionales/{id}/password` con `{"password": "..."}` → 204 |
+| Cambiar rol | `PUT /api/v1/profesionales/{id}/rol` con `{"rol": "odontologo" \| "administrador"}` |
+
+```json
+{
+  "nombre": "Dra. Ana Pérez",
+  "identificacion": "1020304050",
+  "correo": "ana.perez@hospital.co",
+  "especializacion": "Endodoncia",
+  "password": "UnaClaveSegura123",
+  "rol": "odontologo"
+}
+```
+
+- **Contraseña:** mínimo 10 caracteres, con letras y números, sin espacios al inicio ni al final. Si no cumple → 422 con el motivo (el 422 no repite la contraseña).
+- El correo se guarda en minúsculas. Errores: **409** correo o documento ya registrados / te quitarías el rol de administrador a ti mismo / no quedaría ningún administrador activo; **422** datos inválidos; **502** el proveedor de identidad no respondió; **503** la gestión de cuentas no está configurada en el servidor.
+- Reglas que el front puede anticipar: un administrador **no puede desactivarse ni quitarse el rol a sí mismo**; no se puede dejar al sistema sin un administrador activo.
+- Un profesional **desactivado** pierde el acceso de inmediato: cualquier llamada suya responde **403 "Cuenta desactivada"**. En ese caso el front debe cerrar la sesión y mostrar el aviso.
+- **Perfil de usuario:** `GET /api/v1/profesionales/yo` responde 404 si el usuario no tiene profesional enlazado (como la cuenta administradora inicial). Las cuentas creadas desde esta pestaña siempre quedan enlazadas.
+- **Cambiar la propia contraseña** y **"olvidé mi contraseña"** no pasan por esta API: se hacen directo con Supabase en el front (`supabase.auth.updateUser({ password })` y `supabase.auth.resetPasswordForEmail(correo)`).
+- El método `PUT` ya está permitido en CORS.
+
+## 9. Cosas que suelen fallar
 
 | Síntoma en el navegador | Causa | Solución |
 |---|---|---|
@@ -205,7 +237,7 @@ Object.assign(document.createElement("a"), { href: url, download: `reporte_${tip
 | 422 al abrir una ficha o un expediente | se está usando un número o el `codigo` (`P-007`) en la ruta | usar `id_paciente` (UUID) de la respuesta del listado |
 | La imagen no carga | el enlace caducó (5 min) | volver a pedir el listado |
 
-## 9. Orden recomendado para integrar
+## 10. Orden recomendado para integrar
 
 1. Conectar login, listar pacientes, crear paciente y subir imagen.
 2. Cuando el front esté desplegado: agregar su dirección `https://...` a `CORS_ORIGINS`.

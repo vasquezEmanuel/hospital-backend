@@ -14,7 +14,17 @@ from app.main import app
 from app.middleware.auditoria import get_auditor
 from app.models import Profesional
 from app.repositories.imagen_repo import COLOMBIA
-from app.routers import atenciones, auditoria, enfermedades, expediente, imagenes, importaciones, pacientes, reportes
+from app.routers import (
+    atenciones,
+    auditoria,
+    cuentas,
+    enfermedades,
+    expediente,
+    imagenes,
+    importaciones,
+    pacientes,
+    reportes,
+)
 from app.services import auditoria_service
 from app.services.almacenamiento import AlmacenamientoLocal, get_almacenamiento
 
@@ -66,9 +76,10 @@ def test_cada_ruta_de_datos_de_pacientes_declara_el_auditor():
         importaciones.router,
         reportes.router,
         reportes.inicio,
+        cuentas.router,
     )
     rutas = [r for router in routers for r in router.routes if isinstance(r, APIRoute)]
-    assert len(rutas) == 25  # si se agrega una ruta, esta prueba obliga a decidir cómo se audita
+    assert len(rutas) == 30  # si se agrega una ruta, esta prueba obliga a decidir cómo se audita
     sin_auditor = [
         f"{sorted(r.methods)} {r.path}"
         for r in rutas

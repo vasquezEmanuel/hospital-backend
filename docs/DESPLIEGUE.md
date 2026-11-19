@@ -112,3 +112,11 @@ prueba los endpoints del guion.
 ## Qué falta para producción real (Sprint 5)
 Proveedor de identidad (Auth0/Cognito/Supabase Auth) en lugar de tokens de desarrollo, `ENVIRONMENT=production`
 y `DOCS_ENABLED=false`, almacenamiento S3 (añadir `boto3`), migraciones como paso de despliegue aparte, pruebas de carga.
+
+## 7 · Gestión de cuentas de profesionales (llave de servicio)
+La pestaña "Gestión de profesionales" crea usuarios en Supabase Auth desde la API. Para eso la API necesita la llave de administración de Supabase:
+1. Supabase → **Project Settings → API Keys** → copia la **secret key** (antes llamada `service_role`; empieza por `sb_secret_...`). **Nunca** la pongas en el front ni en el repositorio.
+2. Render → tu servicio → **Environment** → agrega `SUPABASE_SERVICE_ROLE_KEY` = esa llave. **Save, rebuild, and deploy.**
+3. Sin esta variable, las rutas de cuentas responden 503 y todo lo demás funciona igual. `SUPABASE_URL` no hace falta: se deduce de `AUTH_ISSUER`.
+4. Primer administrador de una instalación nueva: `docs/sql/primer_admin.sql` (una sola vez); los demás se crean desde la pantalla.
+5. Supabase → **Authentication → Sign In / Providers**: deja desactivado **Allow new users to sign up** (acceso solo por invitación).

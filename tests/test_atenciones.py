@@ -216,7 +216,8 @@ def test_profesionales_crud_enlace_y_yo(admin, db):
         admin.patch(f"/api/v1/profesionales/{id_}", json={"especializacion": "Cirugía"}).json()["especializacion"]
         == "Cirugía"
     )
-    assert admin.patch(f"/api/v1/profesionales/{id_}", json={"activo": False}).json()["activo"] is False
+    # este profesional está enlazado al propio administrador de la prueba: no puede desactivarse a sí mismo
+    assert admin.patch(f"/api/v1/profesionales/{id_}", json={"activo": False}).status_code == 409
     assert admin.patch("/api/v1/profesionales/999999", json={"activo": False}).status_code == 404
     otro = admin.post(
         "/api/v1/profesionales", json={"nombre": "Otro Dr", "identificacion": "4321", "correo": "o@h.co"}

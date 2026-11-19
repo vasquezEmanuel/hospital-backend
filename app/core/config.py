@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     role_odontologo: str = "odontologo"
     role_administrador: str = "administrador"
 
+    # --- Gestión de cuentas de profesionales (administración del proveedor de identidad: Supabase Auth) ---
+    # La llave de servicio ("service_role"/"secret key") SOLO vive en las variables de Render. Vacía = desactivada.
+    supabase_service_role_key: str = ""
+    supabase_url: str = (
+        ""  # vacío = se deduce de AUTH_ISSUER (https://REF.supabase.co/auth/v1 -> https://REF.supabase.co)
+    )
+    password_min_length: int = 10
+
     cors_origins: str = ""  # lista separada por comas
 
     # --- Almacenamiento de imágenes clínicas (Sprint 3) ---
@@ -50,6 +58,13 @@ class Settings(BaseSettings):
     max_import_mb: int = 25  # Sprint 8: archivos Excel/CSV de importación
     max_import_images: int = 50  # Sprint 8: imágenes por solicitud de importación en lote
     public_base_url: str = "http://localhost:8000"  # prefijo de los enlaces del almacenamiento local
+
+    @property
+    def identidad_url(self) -> str:
+        """URL base de Supabase para su API de administración."""
+        if self.supabase_url:
+            return self.supabase_url.rstrip("/")
+        return self.auth_issuer.rstrip("/").removesuffix("/auth/v1")
 
     @property
     def sqlalchemy_url(self) -> str:
