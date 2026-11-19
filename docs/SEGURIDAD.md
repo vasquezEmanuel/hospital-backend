@@ -67,3 +67,11 @@ La API **se niega a arrancar** si falta algo de: `DOCS_ENABLED=false`, `AUTH_JWK
 
 ## 6 · Segundo factor (MFA): apagado
 El equipo decidió no exigirlo por ahora. El soporte sigue en el código (`AUTH_REQUIRE_MFA`, desactivado) y se puede encender sin cambios: activar TOTP en Supabase (*Authentication → Sign In / Providers → Multi-Factor*), que el front incluya las pantallas de inscripción y de código, y poner `AUTH_REQUIRE_MFA=true`. El Documento Técnico (6.5) contempla MFA: no tenerlo es una **desviación que debe validarse con la Dra. Alvarez**, porque entonces la contraseña es lo único que protege los datos de los pacientes (usar contraseñas largas y únicas).
+
+## 7 · Cuentas de profesionales
+- Las cuentas y los roles viven en Supabase Auth; nuestra base solo guarda el profesional y su `auth_id`. La contraseña nunca se guarda, audita, registra ni devuelve (ni siquiera en un 422).
+- Crear, bloquear, cambiar contraseña o rol es solo del `administrador`, usa la llave de servicio (solo en variables de Render) y queda en auditoría con el id y el rol, sin correos ni contraseñas.
+- Un profesional desactivado se bloquea en Supabase y además la API responde 403 "Cuenta desactivada" de inmediato, aunque su token siga vigente.
+- Un administrador no puede desactivarse ni quitarse el rol a sí mismo, y el sistema no puede quedarse sin un administrador activo.
+- Si falla el alta del profesional después de crear la cuenta, la cuenta recién creada se borra (única baja física, sobre un usuario que nunca llegó a existir en el sistema).
+- Pendiente de producción: correo propio (SMTP) en Supabase para "olvidé mi contraseña", y límite de intentos (Sprint 10).

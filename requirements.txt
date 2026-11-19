@@ -10,3 +10,4 @@ openpyxl>=3.1,<4
 xlrd>=2.0.1,<3
 python-multipart>=0.0.20,<1
 boto3>=1.35,<2
+httpx>=0.27,<1  # Sprint 10-previo: API de administración del proveedor de identidad (cuentas de profesionales)

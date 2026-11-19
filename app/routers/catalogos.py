@@ -21,8 +21,10 @@ from app.schemas.catalogos import (
     ProfesionalUpdate,
 )
 from app.schemas.common import ErrorResponse
-from app.services import auditoria_service, catalogo_service
-from app.services.errors import ConflictError, NotFoundError
+from app.services import auditoria_service, catalogo_service, cuenta_service
+from app.services.cuenta_service import ProveedorNoDisponibleError
+from app.services.errors import ConflictError, DatosInvalidosError, NotFoundError
+from app.services.identidad_service import ProveedorIdentidad, get_identidad_opcional
 
 _ERRORES = {401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}}
 
@@ -127,7 +129,8 @@ def editar_profesional(
     datos: ProfesionalUpdate,
     db: Session = Depends(get_db),
     auditor: Auditor = Depends(get_auditor),
-    _: CurrentUser = Depends(require_admin),
+    identidad: ProveedorIdentidad | None = Depends(get_identidad_opcional),
+    user: CurrentUser = Depends(require_admin),
 ):
     auditor.registrar(
         "editar_profesional",
@@ -135,6 +138,10 @@ def editar_profesional(
         detalle={"id": id_profesional, **auditoria_service.filtros_usados(**datos.model_dump(exclude_unset=True))},
     )
     try:
-        return catalogo_service.actualizar_profesional(db, id_profesional, datos)
+        return cuenta_service.actualizar_profesional(db, identidad, id_profesional, datos, auth_sub=user.sub)
     except (NotFoundError, ConflictError) as exc:
         raise _traducir(exc) from exc
+    except DatosInvalidosError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    except ProveedorNoDisponibleError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
