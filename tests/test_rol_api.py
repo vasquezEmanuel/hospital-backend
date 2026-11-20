@@ -125,6 +125,37 @@ def test_la_api_puede_editar_atenciones_y_reemplazar_tratamientos(api):
     api.execute(text("DELETE FROM atencion_x_tratamiento WHERE id_atencion = :a"), {"a": at})
 
 
+def test_la_api_puede_corregir_e_inactivar_diagnosticos(api):
+    """Bajas y ediciones: UPDATE de texto/código/activo y DELETE solo de los vínculos código-diagnóstico bucal."""
+    pac = api.execute(
+        text("INSERT INTO paciente (documento_identidad, nombre) VALUES ('9990004', 'Prueba D') RETURNING id_paciente")
+    ).scalar_one()
+    at = api.execute(
+        text("INSERT INTO atencion (id_paciente, fecha_atencion) VALUES (:p, now()) RETURNING id_atencion"), {"p": pac}
+    ).scalar_one()
+    dx = api.execute(
+        text(
+            "INSERT INTO diagnostico_bucal (id_atencion, descripcion) VALUES (:a, 'x') RETURNING id_diagnostico_bucal"
+        ),
+        {"a": at},
+    ).scalar_one()
+    api.execute(
+        text("INSERT INTO diagnostico_hospitalario (id_atencion, descripcion_original) VALUES (:a, 'x')"), {"a": at}
+    )
+    api.execute(
+        text("UPDATE diagnostico_bucal SET descripcion = 'y', activo = FALSE WHERE id_diagnostico_bucal = :d"),
+        {"d": dx},
+    )
+    api.execute(
+        text(
+            "UPDATE diagnostico_hospitalario SET descripcion_original = 'y', cod_4 = NULL, activo = FALSE "
+            "WHERE id_atencion = :a"
+        ),
+        {"a": at},
+    )
+    api.execute(text("DELETE FROM cie10_x_diagnostico_bucal WHERE id_diagnostico_bucal = :d"), {"d": dx})
+
+
 @pytest.mark.parametrize(
     "sql",
     [
@@ -143,7 +174,9 @@ def test_la_api_puede_editar_atenciones_y_reemplazar_tratamientos(api):
         "DELETE FROM diagnostico_hospitalario",
         "DELETE FROM atencion",
         "DELETE FROM diagnostico_bucal",
-        "UPDATE diagnostico_bucal SET descripcion = 'no debe'",
+        "UPDATE diagnostico_bucal SET id_atencion = 1",
+        "UPDATE diagnostico_hospitalario SET id_atencion = 1",
+        "DELETE FROM diagnostico_hospitalario WHERE true",
         "DELETE FROM aseguradora",
         "DELETE FROM profesional",
         "SELECT * FROM alembic_version",

@@ -238,6 +238,25 @@ Object.assign(document.createElement("a"), { href: url, download: `reporte_${tip
 - **Cambiar la propia contraseña** y **"olvidé mi contraseña"** no pasan por esta API: se hacen directo con Supabase en el front (`supabase.auth.updateUser({ password })`). La recuperación por correo requiere configurar el envío de correos en Supabase y hoy está fuera de alcance; mientras tanto, el administrador define una contraseña nueva con `PUT .../password`.
 - El método `PUT` ya está permitido en CORS.
 
+## 8.1 Bajas ("borrar") y ediciones — resumen para el front
+
+En un sistema clínico **"borrar" siempre es una baja lógica**: el registro se conserva (reglas 5 y 6) y deja de mostrarse. El front puede llamar al botón "Eliminar", pero la respuesta es `204` y el dato desaparece de los listados.
+
+| Qué | Endpoint | Rol | Notas |
+|---|---|---|---|
+| Baja de profesional | `DELETE /profesionales/{id}` | admin | Inactiva la ficha **y bloquea su cuenta** al instante. Reactivar: `PATCH /profesionales/{id}` `{"activo": true}`. 409 si es uno mismo o el último administrador. |
+| Baja de aseguradora | `DELETE /aseguradoras/{id}` | admin | Reactivar con `PATCH` `{"activo": true}`; con `?incluir_inactivas=true` se listan. |
+| Baja de tratamiento | `DELETE /tratamientos/{id}` | admin | Igual que aseguradora. |
+| Agregar diagnóstico bucal a una atención | `POST /atenciones/{id}/diagnosticos-bucales` | clínico | Cuerpo `{descripcion, codigos[]}` (códigos odontológicos). Devuelve la atención completa. |
+| Corregir diagnóstico bucal | `PATCH /diagnosticos-bucales/{id}` | clínico | `descripcion` y/o `codigos` (reemplaza la lista). Devuelve la atención completa. |
+| Baja de diagnóstico bucal | `DELETE /diagnosticos-bucales/{id}` | clínico | 204. |
+| Crear/reemplazar diagnóstico de hospitalización | `PUT /atenciones/{id}/diagnostico-hospitalario` | clínico | Cuerpo `{descripcion_original, cod_4?}`. Solo hay uno por atención; si estaba dado de baja, se reactiva. |
+| Baja de diagnóstico de hospitalización | `DELETE /atenciones/{id}/diagnostico-hospitalario` | clínico | 204; 404 si no tiene. |
+| Reasignar una imagen | `PATCH /imagenes/{id}` | clínico | `{id_atencion?, id_diagnostico_bucal?}`; `null` desvincula (sigue siendo del paciente). Todo debe ser del mismo paciente. |
+| Baja de imagen | `DELETE /imagenes/{id}` | clínico | Ya existía. |
+
+**Lo que NO existe a propósito:** `DELETE` de pacientes y de atenciones. Son historia clínica y no se borran (los datos de un paciente se corrigen con `PATCH /pacientes/{id}` y `PATCH /atenciones/{id}`; los diagnósticos erróneos se dan de baja). Tampoco se edita el catálogo CIE-10 por la API (cambiaría qué códigos son odontológicos); se carga una vez por `/importaciones`. El front no debe mostrar botón de eliminar en pacientes ni atenciones.
+
 ## 9. Cosas que suelen fallar
 
 | Síntoma en el navegador | Causa | Solución |

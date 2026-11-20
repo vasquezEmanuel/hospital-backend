@@ -346,3 +346,160 @@ def test_patch_solo_personal_clinico(db, cat):
         assert r.status_code == 403
     finally:
         app.dependency_overrides.clear()
+
+
+# --- bajas y ediciones ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("ruta", ["aseguradoras", "tratamientos"])
+def test_baja_de_catalogo_es_logica_idempotente_y_solo_admin(admin, ruta):
+    base = f"/api/v1/{ruta}"
+    id_ = admin.post(base, json={"nombre": "Para dar de baja"}).json()["id"]
+    assert admin.delete(f"{base}/{id_}").status_code == 204
+    assert admin.delete(f"{base}/{id_}").status_code == 204  # idempotente
+    assert id_ not in [x["id"] for x in admin.get(base).json()]
+    assert id_ in [x["id"] for x in admin.get(base, params={"incluir_inactivas": True}).json()]
+    assert admin.patch(f"{base}/{id_}", json={"activo": True}).json()["activo"] is True  # se puede reactivar
+    assert admin.delete(f"{base}/999999").status_code == 404
+
+
+def test_baja_de_catalogo_prohibida_al_odontologo(client):
+    assert client.delete("/api/v1/aseguradoras/1").status_code == 403
+    assert client.delete("/api/v1/tratamientos/1").status_code == 403
+
+
+def _bucal(d, i=0):
+    return d["diagnosticos_bucales"][i]
+
+
+def test_agregar_corregir_y_dar_de_baja_un_diagnostico_bucal(client, cat, db):
+    db.add(Cie10(cod_4="K040", cod_3="K04", descripcion_3="Pulpa", descripcion_4="Pulpitis", es_odontologico=True))
+    db.flush()
+    at = _crear(client, cat)
+    base = f"{A}/{at['id_atencion']}/diagnosticos-bucales"
+
+    assert (
+        client.post(base, json={"descripcion": "Pulpitis", "codigos": ["C187"]}).status_code == 422
+    )  # no odontológico
+    assert client.post(base, json={"descripcion": "Pulpitis", "codigos": ["ZZZZ"]}).status_code == 422  # no existe
+    assert client.post(base, json={"descripcion": "Pulpitis", "codigos": []}).status_code == 422
+    r = client.post(base, json={"descripcion": "Pulpitis", "codigos": ["k04.0"]})
+    assert r.status_code == 201, r.text
+    assert [d["descripcion"] for d in r.json()["diagnosticos_bucales"]] == ["Caries", "Pulpitis"]
+    nuevo = _bucal(r.json(), 1)["id_diagnostico_bucal"]
+
+    ruta = f"/api/v1/diagnosticos-bucales/{nuevo}"
+    r = client.patch(ruta, json={"descripcion": "Pulpitis irreversible", "codigos": ["K021", "K040"]})
+    assert r.status_code == 200, r.text
+    dx = _bucal(r.json(), 1)
+    assert dx["descripcion"] == "Pulpitis irreversible" and [c["cod_4"] for c in dx["codigos"]] == ["K021", "K040"]
+    assert client.patch(ruta, json={"codigos": ["C187"]}).status_code == 422
+    assert client.patch(ruta, json={}).status_code == 422
+    assert client.patch(ruta, json={"codigos": []}).status_code == 422
+    sin_cambios = client.patch(ruta, json={"descripcion": "Solo texto"}).json()
+    assert [c["cod_4"] for c in _bucal(sin_cambios, 1)["codigos"]] == ["K021", "K040"]  # los códigos no se tocan
+
+    assert client.delete(ruta).status_code == 204
+    detalle = client.get(f"{A}/{at['id_atencion']}").json()
+    assert [d["descripcion"] for d in detalle["diagnosticos_bucales"]] == ["Caries"]  # regla 5: oculto, no borrado
+    assert db.execute(text("SELECT count(*) FROM diagnostico_bucal WHERE NOT activo")).scalar_one() == 1
+    assert client.delete(ruta).status_code == 404
+    assert client.patch(ruta, json={"descripcion": "Otra vez"}).status_code == 404
+    assert (
+        client.post(
+            f"{A}/00000000-0000-0000-0000-000000000000/diagnosticos-bucales",
+            json={"descripcion": "xx", "codigos": ["K021"]},
+        ).status_code
+        == 404
+    )
+    assert client.delete("/api/v1/diagnosticos-bucales/5").status_code == 422  # id numérico
+
+    acciones = [a for (a,) in db.execute(text("SELECT accion FROM auditoria ORDER BY id_evento"))]
+    for esperada in ("agregar_diagnostico_bucal", "editar_diagnostico_bucal", "inactivar_diagnostico_bucal"):
+        assert esperada in acciones
+    volcado = str(db.execute(text("SELECT detalle FROM auditoria")).all())
+    assert "Pulpitis" not in volcado  # nunca el texto clínico
+
+
+def test_diagnostico_hospitalario_crear_reemplazar_baja_y_reactivar(client, cat, db):
+    at = _crear(client, cat, diagnostico_hospitalario=None)
+    assert at["diagnostico_hospitalario"] is None
+    ruta = f"{A}/{at['id_atencion']}/diagnostico-hospitalario"
+    r = client.put(ruta, json={"descripcion_original": "Tumor de colon", "cod_4": "C18.7"})
+    assert r.status_code == 200 and r.json()["diagnostico_hospitalario"]["codigo"]["cod_4"] == "C187"
+    r = client.put(ruta, json={"descripcion_original": "Solo texto"})  # reemplaza, sin duplicar (regla 3)
+    assert r.json()["diagnostico_hospitalario"] == {"descripcion_original": "Solo texto", "codigo": None}
+    assert client.put(ruta, json={"descripcion_original": "x" * 5, "cod_4": "ZZZZ"}).status_code == 422
+    assert client.delete(ruta).status_code == 204
+    assert client.get(f"{A}/{at['id_atencion']}").json()["diagnostico_hospitalario"] is None
+    assert client.delete(ruta).status_code == 404
+    assert client.put(ruta, json={"descripcion_original": "Reactivado"}).json()["diagnostico_hospitalario"] is not None
+    assert db.execute(text("SELECT count(*) FROM diagnostico_hospitalario")).scalar_one() == 1
+    nula = "00000000-0000-0000-0000-000000000000"
+    assert client.put(f"{A}/{nula}/diagnostico-hospitalario", json={"descripcion_original": "xx"}).status_code == 404
+    assert client.delete(f"{A}/{nula}/diagnostico-hospitalario").status_code == 404
+
+
+def test_diagnosticos_solo_personal_clinico(db, cat):
+    from fastapi.testclient import TestClient
+
+    from app.db.session import get_db
+
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(sub="x", email=None, roles=frozenset())
+    try:
+        c = TestClient(app)
+        u = "00000000-0000-0000-0000-000000000000"
+        assert c.delete(f"/api/v1/diagnosticos-bucales/{u}").status_code == 403
+        assert c.put(f"{A}/{u}/diagnostico-hospitalario", json={"descripcion_original": "xx"}).status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+JPG = b"\xff\xd8\xff\xe0" + b"0" * 64
+
+
+def _imagen(client, paciente, **extra):
+    r = client.post(
+        "/api/v1/imagenes",
+        data={"id_paciente": paciente, **extra},
+        files={"archivo": ("f.jpg", JPG, "image/jpeg")},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id_imagen"]
+
+
+def test_reasignar_imagen_a_otra_atencion_o_diagnostico(client, cat, db):
+    a1 = _crear(client, cat)
+    a2 = _crear(client, cat)
+    pac = a1["paciente"]["id_paciente"]
+    img = _imagen(client, pac)  # solo del paciente
+    ruta = f"/api/v1/imagenes/{img}"
+    r = client.patch(ruta, json={"id_atencion": a1["id_atencion"]})
+    assert r.status_code == 200 and r.json()["id_atencion"] == a1["id_atencion"]
+    dx2 = _bucal(a2)["id_diagnostico_bucal"]
+    r = client.patch(ruta, json={"id_diagnostico_bucal": dx2})  # el diagnóstico implica su atención
+    assert r.json()["id_atencion"] == a2["id_atencion"] and r.json()["id_diagnostico_bucal"] == dx2
+    r = client.patch(ruta, json={"id_atencion": a1["id_atencion"]})  # cambiar solo la atención suelta el diagnóstico
+    assert r.json()["id_atencion"] == a1["id_atencion"] and r.json()["id_diagnostico_bucal"] is None
+    r = client.patch(ruta, json={"id_atencion": None})  # desvincular: sigue siendo del paciente (regla 4)
+    assert r.json()["id_atencion"] is None and r.json()["id_paciente"] == pac
+    assert client.patch(ruta, json={"id_atencion": a1["id_atencion"], "id_diagnostico_bucal": dx2}).status_code == 422
+    assert client.patch(ruta, json={}).status_code == 422
+
+
+def test_reasignar_imagen_no_cruza_pacientes_ni_toca_inactivas(client, cat, db):
+    ajena = client.post(A, json=_cuerpo(cat, id_paciente=str(cat["carlos"].public_id))).json()
+    mia = _crear(client, cat)
+    img = _imagen(client, mia["paciente"]["id_paciente"])
+    ruta = f"/api/v1/imagenes/{img}"
+    assert client.patch(ruta, json={"id_atencion": ajena["id_atencion"]}).status_code == 422
+    assert client.patch(ruta, json={"id_diagnostico_bucal": _bucal(ajena)["id_diagnostico_bucal"]}).status_code == 422
+    client.delete(ruta)
+    assert client.patch(ruta, json={"id_atencion": mia["id_atencion"]}).status_code == 404
+    assert (
+        client.patch("/api/v1/imagenes/00000000-0000-0000-0000-000000000000", json={"id_atencion": None}).status_code
+        == 404
+    )
+    acciones = [a for (a,) in db.execute(text("SELECT accion FROM auditoria"))]
+    assert "editar_imagen" in acciones
