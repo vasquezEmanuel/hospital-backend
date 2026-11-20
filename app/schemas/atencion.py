@@ -7,7 +7,7 @@ hospitalización por atención. Los identificadores que salen y entran son UUID 
 from datetime import date, time
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.expediente import AtencionExpediente
 
@@ -59,6 +59,38 @@ class AtencionCreate(BaseModel):
         if v > date.today():
             raise ValueError("La fecha de la atención no puede ser futura")
         return v
+
+
+class AtencionUpdate(BaseModel):
+    """PATCH: solo se modifican los campos enviados. `null` borra un dato opcional.
+
+    `ids_tratamientos` reemplaza la lista completa.
+
+    No se editan el paciente ni los diagnósticos (los diagnósticos tienen su propia regla: reglas 2, 3 y 5).
+    """
+
+    fecha_atencion: date | None = None
+    hora_atencion: time | None = None
+    id_aseguradora: int | None = None
+    ubicacion: str | None = Field(default=None, max_length=150)
+    id_profesional: int | None = None
+    profesional_texto: str | None = Field(default=None, max_length=150)
+    plan_tratamiento: str | None = Field(default=None, max_length=5000)
+    observaciones: str | None = Field(default=None, max_length=5000)
+    ids_tratamientos: list[int] | None = Field(default=None, max_length=30)
+
+    @model_validator(mode="after")
+    def _validar(self):
+        enviados = self.model_fields_set
+        if not enviados:
+            raise ValueError("No se envió ningún campo para modificar")
+        if "fecha_atencion" in enviados and self.fecha_atencion is None:
+            raise ValueError("La fecha de la atención no se puede dejar vacía")
+        if "ids_tratamientos" in enviados and self.ids_tratamientos is None:
+            raise ValueError("ids_tratamientos no puede ser null (envía [] para quitar todos)")
+        if self.fecha_atencion and self.fecha_atencion > date.today():
+            raise ValueError("La fecha de la atención no puede ser futura")
+        return self
 
 
 class PacienteResumen(BaseModel):

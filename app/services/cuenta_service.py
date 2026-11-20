@@ -13,8 +13,8 @@ from app.models import Profesional
 from app.repositories import catalogo_repo
 from app.schemas.catalogos import ProfesionalAdminOut, ProfesionalUpdate
 from app.schemas.cuentas import (
-    CuentaCreate,
     CuentaExistente,
+    ProfesionalCrear,
     ProfesionalGestionOut,
 )
 from app.services import catalogo_service
@@ -71,7 +71,7 @@ def _verificar_duplicados(db: Session, *, identificacion: str | None, correo: st
         raise ConflictError(f"Ya existe un profesional con ese {choque}")
 
 
-def crear_con_cuenta(db: Session, identidad: ProveedorIdentidad, datos: CuentaCreate) -> ProfesionalGestionOut:
+def crear_con_cuenta(db: Session, identidad: ProveedorIdentidad, datos: ProfesionalCrear) -> ProfesionalGestionOut:
     _verificar_duplicados(db, identificacion=datos.identificacion, correo=datos.correo)
     uid = _llamar(identidad.crear_usuario, datos.correo, datos.password, datos.rol)
     try:
@@ -96,6 +96,12 @@ def crear_con_cuenta(db: Session, identidad: ProveedorIdentidad, datos: CuentaCr
         _deshacer(identidad, uid)
         raise
     return _gestion(p, {uid: UsuarioIdentidad(uid, datos.correo, (datos.rol,), False)})
+
+
+def crear_solo_ficha(db: Session, datos: ProfesionalCrear) -> ProfesionalGestionOut:
+    """Profesional sin cuenta nueva (histórico, o enlazado a una cuenta existente por `auth_id`)."""
+    base = catalogo_service.crear_profesional(db, datos)
+    return ProfesionalGestionOut(**base.model_dump(), tiene_cuenta=bool(base.auth_id), rol=None, cuenta_bloqueada=None)
 
 
 def _deshacer(identidad: ProveedorIdentidad, uid: str) -> None:

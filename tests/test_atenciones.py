@@ -244,3 +244,105 @@ def test_cie10_no_odontologico_no_se_cuela_por_trigger(db, cat):
             )
         )
     assert Cie10  # importado para dejar claro de qué entidad se trata
+
+
+# --- PATCH /atenciones/{id} ---------------------------------------------------------------------------------
+
+
+def _crear(client, cat, **extra):
+    return client.post(A, json=_cuerpo(cat, **extra)).json()
+
+
+def test_patch_modifica_plan_observaciones_y_tratamientos(client, cat):
+    d = _crear(client, cat)
+    r = client.patch(
+        f"{A}/{d['id_atencion']}",
+        json={
+            "plan_tratamiento": "Nuevo plan",
+            "observaciones": "Control en 1 mes",
+            "ids_tratamientos": [cat["trat"][1].id_tratamiento],
+        },
+    )
+    assert r.status_code == 200, r.text
+    n = r.json()
+    assert (n["plan_tratamiento"], n["observaciones"]) == ("Nuevo plan", "Control en 1 mes")
+    assert [t["nombre"] for t in n["tratamientos"]] == ["RX"]  # reemplaza, no suma
+    assert n["ubicacion"] == "Piso 3" and n["fecha_atencion"] == "2026-10-01"  # lo no enviado no cambia
+    assert n["diagnosticos_bucales"] == d["diagnosticos_bucales"] and n["diagnostico_hospitalario"]["codigo"]
+    assert client.patch(f"{A}/{d['id_atencion']}", json={"ids_tratamientos": []}).json()["tratamientos"] == []
+
+
+def test_patch_null_borra_datos_opcionales_y_cambia_catalogos(client, cat):
+    d = _crear(client, cat)
+    n = client.patch(
+        f"{A}/{d['id_atencion']}",
+        json={"ubicacion": None, "plan_tratamiento": None, "id_profesional": cat["prof"].id_profesional},
+    ).json()
+    assert n["ubicacion"] is None and n["plan_tratamiento"] is None and n["profesional"] == "Dra. Gloria Alvarez"
+    n = client.patch(f"{A}/{d['id_atencion']}", json={"id_aseguradora": None, "fecha_atencion": "2026-09-30"}).json()
+    assert n["aseguradora"] is None and n["fecha_atencion"] == "2026-09-30"
+
+
+@pytest.mark.parametrize(
+    ("cuerpo", "codigo"),
+    [
+        ({}, 422),
+        ({"fecha_atencion": None}, 422),
+        ({"ids_tratamientos": None}, 422),
+        ({"fecha_atencion": str(date.today() + timedelta(days=3))}, 422),
+        ({"ids_tratamientos": [999999]}, 422),
+        ({"id_aseguradora": 999999}, 422),
+        ({"id_profesional": 999999}, 422),
+        ({"paciente": "x", "plan_tratamiento": "ok"}, 200),  # campos ajenos se ignoran: el paciente no se cambia
+    ],
+)
+def test_patch_validaciones(client, cat, cuerpo, codigo):
+    d = _crear(client, cat)
+    assert client.patch(f"{A}/{d['id_atencion']}", json=cuerpo).status_code == codigo
+
+
+def test_patch_rechaza_inactivos_pero_conserva_un_tratamiento_inactivo_ya_asignado(client, cat, db):
+    d = _crear(client, cat)
+    inactivo = cat["trat"][2].id_tratamiento
+    activo = cat["trat"][0].id_tratamiento
+    assert client.patch(f"{A}/{d['id_atencion']}", json={"ids_tratamientos": [inactivo]}).status_code == 422
+    assert (
+        client.patch(f"{A}/{d['id_atencion']}", json={"id_aseguradora": cat["inactiva"].id_aseguradora}).status_code
+        == 422
+    )
+    db.execute(text("UPDATE tratamiento SET activo = FALSE WHERE id_tratamiento = :i"), {"i": activo})
+    ok = client.patch(f"{A}/{d['id_atencion']}", json={"ids_tratamientos": [activo], "observaciones": "x"})
+    assert ok.status_code == 200 and [t["nombre"] for t in ok.json()["tratamientos"]] == ["Operatoria"]
+
+
+def test_patch_inexistente_404_uuid_numerico_422_y_se_audita(client, cat, db):
+    assert client.patch(f"{A}/00000000-0000-0000-0000-000000000000", json={"observaciones": "x"}).status_code == 404
+    assert client.patch(f"{A}/5", json={"observaciones": "x"}).status_code == 422
+    d = _crear(client, cat)
+    client.patch(f"{A}/{d['id_atencion']}", json={"observaciones": "dato clínico sensible"})
+    filas = db.execute(
+        text("SELECT accion, detalle::text, id_paciente FROM auditoria WHERE accion = 'editar_atencion'")
+    ).all()
+    assert len(filas) == 2 and filas[0][2] is None and filas[-1][2] is not None
+    assert "dato clínico sensible" not in filas[-1][1] and '"campos": ["observaciones"]' in filas[-1][1]
+
+
+def test_patch_se_refleja_en_expediente_y_reportes(client, cat):
+    d = _crear(client, cat)
+    client.patch(f"{A}/{d['id_atencion']}", json={"plan_tratamiento": "Plan editado"})
+    exp = client.get(f"/api/v1/pacientes/{cat['maria'].public_id}/expediente").json()
+    assert any(a["plan_tratamiento"] == "Plan editado" for a in exp["atenciones"])
+
+
+def test_patch_solo_personal_clinico(db, cat):
+    from fastapi.testclient import TestClient
+
+    from app.db.session import get_db
+
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(sub="x", email=None, roles=frozenset({"otro"}))
+    try:
+        r = TestClient(app).patch(f"{A}/00000000-0000-0000-0000-000000000000", json={"observaciones": "x"})
+        assert r.status_code == 403
+    finally:
+        app.dependency_overrides.clear()

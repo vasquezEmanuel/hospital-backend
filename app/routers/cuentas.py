@@ -12,7 +12,6 @@ from app.db.session import get_db
 from app.middleware.auditoria import Auditor, get_auditor
 from app.schemas.common import ErrorResponse
 from app.schemas.cuentas import (
-    CuentaCreate,
     CuentaExistente,
     PasswordUpdate,
     ProfesionalGestionOut,
@@ -25,7 +24,7 @@ from app.services.identidad_service import ProveedorIdentidad, get_identidad
 
 router = APIRouter(
     prefix="/profesionales",
-    tags=["Cuentas de profesionales"],
+    tags=["Profesionales"],
     dependencies=[Depends(require_admin)],
     responses={
         401: {"model": ErrorResponse},
@@ -49,7 +48,11 @@ def _http(exc: Exception) -> HTTPException:
 _ERRORES = (NotFoundError, ConflictError, DatosInvalidosError, ProveedorNoDisponibleError)
 
 
-@router.get("/gestion", response_model=list[ProfesionalGestionOut], summary="Lista de la pestaña de gestión")
+@router.get(
+    "/gestion",
+    response_model=list[ProfesionalGestionOut],
+    summary="Lista de gestión (admin): con documento, correo, rol y estado de la cuenta",
+)
 def listar_gestion(
     db: Session = Depends(get_db),
     identidad: ProveedorIdentidad = Depends(get_identidad),
@@ -58,26 +61,6 @@ def listar_gestion(
     auditor.registrar("consultar_gestion_profesionales", "profesional")
     try:
         return cuenta_service.listar(db, identidad)
-    except _ERRORES as exc:
-        raise _http(exc) from exc
-
-
-@router.post(
-    "/cuenta",
-    response_model=ProfesionalGestionOut,
-    status_code=status.HTTP_201_CREATED,
-    summary="Crear profesional con su cuenta (formulario de creación)",
-    responses={409: {"model": ErrorResponse, "description": "Correo o documento ya registrados"}},
-)
-def crear_con_cuenta(
-    datos: CuentaCreate,
-    db: Session = Depends(get_db),
-    identidad: ProveedorIdentidad = Depends(get_identidad),
-    auditor: Auditor = Depends(get_auditor),
-):
-    auditor.registrar("crear_cuenta_profesional", "profesional", detalle={"rol": datos.rol})
-    try:
-        return cuenta_service.crear_con_cuenta(db, identidad, datos)
     except _ERRORES as exc:
         raise _http(exc) from exc
 
