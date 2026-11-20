@@ -16,11 +16,11 @@ from app.schemas.catalogos import (
     CatalogoOut,
     CatalogoUpdate,
     ProfesionalAdminOut,
-    ProfesionalCreate,
     ProfesionalOut,
     ProfesionalUpdate,
 )
 from app.schemas.common import ErrorResponse
+from app.schemas.cuentas import ProfesionalCrear, ProfesionalGestionOut
 from app.services import auditoria_service, catalogo_service, cuenta_service
 from app.services.cuenta_service import ProveedorNoDisponibleError
 from app.services.errors import ConflictError, DatosInvalidosError, NotFoundError
@@ -85,7 +85,11 @@ tratamientos = _catalogo("/tratamientos", "Tratamientos", Tratamiento, "tratamie
 profesionales = APIRouter(prefix="/profesionales", tags=["Profesionales"], responses=_ERRORES)
 
 
-@profesionales.get("", response_model=list[ProfesionalOut], summary="Listar profesionales")
+@profesionales.get(
+    "",
+    response_model=list[ProfesionalOut],
+    summary="Lista corta para desplegables (nombre y especialidad; cualquier personal clínico)",
+)
 def listar_profesionales(
     incluir_inactivos: bool = Query(False),
     db: Session = Depends(get_db),
@@ -108,18 +112,46 @@ def profesional_actual(db: Session = Depends(get_db), user: CurrentUser = Depend
 
 
 @profesionales.post(
-    "", response_model=ProfesionalAdminOut, status_code=status.HTTP_201_CREATED, summary="Crear profesional (admin)"
+    "",
+    response_model=ProfesionalGestionOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear profesional, con o sin cuenta de acceso (admin)",
+    description=(
+        "Con `password` se crea también la cuenta de acceso en el proveedor de identidad, con el `rol` indicado "
+        "(odontologo por defecto). Sin `password` solo se crea la ficha. `auth_id` enlaza una cuenta que ya existe."
+    ),
+    responses={
+        409: {"model": ErrorResponse, "description": "Correo o documento ya registrados"},
+        502: {"model": ErrorResponse, "description": "El proveedor de identidad no respondió"},
+        503: {"model": ErrorResponse, "description": "Gestión de cuentas no configurada"},
+    },
 )
 def crear_profesional(
-    datos: ProfesionalCreate,
+    datos: ProfesionalCrear,
     db: Session = Depends(get_db),
     auditor: Auditor = Depends(get_auditor),
+    identidad: ProveedorIdentidad | None = Depends(get_identidad_opcional),
     _: CurrentUser = Depends(require_admin),
 ):
-    auditor.registrar("crear_profesional", "profesional")
+    if datos.password:
+        if identidad is None:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "La gestión de cuentas no está configurada (falta SUPABASE_SERVICE_ROLE_KEY)",
+            )
+        auditor.registrar("crear_cuenta_profesional", "profesional", detalle={"rol": datos.rol})
+    else:
+        identidad = None
+        auditor.registrar("crear_profesional", "profesional")
     try:
-        return catalogo_service.crear_profesional(db, datos)
-    except ConflictError as exc:
+        if identidad is not None:
+            return cuenta_service.crear_con_cuenta(db, identidad, datos)
+        return cuenta_service.crear_solo_ficha(db, datos)
+    except (ConflictError, DatosInvalidosError, ProveedorNoDisponibleError) as exc:
+        if isinstance(exc, ProveedorNoDisponibleError):
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+        if isinstance(exc, DatosInvalidosError):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
         raise _traducir(exc) from exc
 
 

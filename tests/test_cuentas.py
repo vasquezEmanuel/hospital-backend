@@ -91,7 +91,7 @@ def _datos(**extra):
 
 
 def test_crear_profesional_con_cuenta(admin, idp, db):
-    r = admin.post(f"{C}/cuenta", json=_datos(especializacion="Endodoncia"))
+    r = admin.post(C, json=_datos(especializacion="Endodoncia"))
     assert r.status_code == 201, r.text
     d = r.json()
     assert (d["tiene_cuenta"], d["rol"], d["activo"], d["correo"]) == (True, "odontologo", True, "ana@h.co")
@@ -101,29 +101,29 @@ def test_crear_profesional_con_cuenta(admin, idp, db):
 
 
 def test_crear_administrador(admin):
-    r = admin.post(f"{C}/cuenta", json=_datos(rol="administrador"))
+    r = admin.post(C, json=_datos(rol="administrador"))
     assert r.status_code == 201 and r.json()["rol"] == "administrador"
-    assert admin.post(f"{C}/cuenta", json=_datos(identificacion="9", correo="x@h.co", rol="otro")).status_code == 422
+    assert admin.post(C, json=_datos(identificacion="9", correo="x@h.co", rol="otro")).status_code == 422
 
 
 @pytest.mark.parametrize("password", ["corta1", "SoloLetrasLargas", "12345678901234", " ConEspacios123 ", "A1" * 40])
 def test_contrasena_debil_o_invalida(admin, password):
-    r = admin.post(f"{C}/cuenta", json=_datos(password=password))
+    r = admin.post(C, json=_datos(password=password))
     assert r.status_code == 422
     assert password not in r.text  # el 422 no repite la contraseña enviada
 
 
 def test_duplicados_409_y_no_deja_cuentas_huerfanas(admin, idp):
-    admin.post(f"{C}/cuenta", json=_datos())
+    admin.post(C, json=_datos())
     antes = len(idp.usuarios)
-    assert admin.post(f"{C}/cuenta", json=_datos(correo="otro@h.co")).status_code == 409  # mismo documento
-    assert admin.post(f"{C}/cuenta", json=_datos(identificacion="7777")).status_code == 409  # mismo correo
+    assert admin.post(C, json=_datos(correo="otro@h.co")).status_code == 409  # mismo documento
+    assert admin.post(C, json=_datos(identificacion="7777")).status_code == 409  # mismo correo
     assert len(idp.usuarios) == antes
 
 
 def test_correo_ya_existente_en_el_proveedor_409(admin, idp):
     idp.agregar("u-x", "libre@h.co", "odontologo")  # existe en el IdP pero no como profesional
-    assert admin.post(f"{C}/cuenta", json=_datos(correo="libre@h.co")).status_code == 409
+    assert admin.post(C, json=_datos(correo="libre@h.co")).status_code == 409
 
 
 def test_si_falla_el_alta_se_deshace_la_cuenta(admin, idp, db, monkeypatch):
@@ -134,12 +134,12 @@ def test_si_falla_el_alta_se_deshace_la_cuenta(admin, idp, db, monkeypatch):
 
     monkeypatch.setattr(catalogo_repo, "agregar", explota)
     with pytest.raises(RuntimeError):
-        admin.post(f"{C}/cuenta", json=_datos())
+        admin.post(C, json=_datos())
     assert idp.borrados == ["uid-2"]
 
 
 def test_lista_de_gestion_trae_rol_y_estado(admin, idp, db):
-    admin.post(f"{C}/cuenta", json=_datos())
+    admin.post(C, json=_datos())
     db.add(Profesional(nombre="Sin cuenta", identificacion="123456", correo="s@h.co"))
     db.flush()
     filas = {f["nombre"]: f for f in admin.get(f"{C}/gestion").json()}
@@ -148,7 +148,7 @@ def test_lista_de_gestion_trae_rol_y_estado(admin, idp, db):
 
 
 def test_desactivar_bloquea_la_cuenta_y_reactivar_la_libera(admin, idp):
-    d = admin.post(f"{C}/cuenta", json=_datos()).json()
+    d = admin.post(C, json=_datos()).json()
     r = admin.patch(f"{C}/{d['id_profesional']}", json={"activo": False})
     assert r.status_code == 200 and r.json()["activo"] is False
     assert idp.usuarios[d["auth_id"]].bloqueado is True
@@ -182,7 +182,7 @@ def test_no_puede_desactivarse_a_si_mismo_ni_quedar_sin_admins(db, admin, idp):
     yo = db.query(Profesional).filter_by(auth_id="auth|admin").one()
     assert admin.patch(f"{C}/{yo.id_profesional}", json={"activo": False}).status_code == 409
     assert admin.put(f"{C}/{yo.id_profesional}/rol", json={"rol": "odontologo"}).status_code == 409
-    otro = admin.post(f"{C}/cuenta", json=_datos(rol="administrador")).json()
+    otro = admin.post(C, json=_datos(rol="administrador")).json()
     idp.bloquear("auth|admin", True)  # el único otro administrador queda bloqueado
     assert admin.put(f"{C}/{otro['id_profesional']}/rol", json={"rol": "odontologo"}).status_code == 409
     assert admin.patch(f"{C}/{otro['id_profesional']}", json={"activo": False}).status_code == 409
@@ -192,7 +192,7 @@ def test_no_puede_desactivarse_a_si_mismo_ni_quedar_sin_admins(db, admin, idp):
 
 
 def test_cambiar_password_y_rol(admin, idp):
-    d = admin.post(f"{C}/cuenta", json=_datos()).json()
+    d = admin.post(C, json=_datos()).json()
     nueva = "OtraClave987654"
     assert admin.put(f"{C}/{d['id_profesional']}/password", json={"password": nueva}).status_code == 204
     assert idp.passwords[d["auth_id"]] == nueva
@@ -220,7 +220,7 @@ def test_cuenta_para_profesional_existente(admin, db, idp):
 
 
 def test_solo_administrador_y_auditoria_sin_secretos(client, admin, db):
-    admin.post(f"{C}/cuenta", json=_datos())
+    admin.post(C, json=_datos())
     filas = db.execute(text("SELECT accion, detalle::text FROM auditoria ORDER BY id_evento")).all()
     assert filas[0][0] == "crear_cuenta_profesional" and filas[0][1] == '{"rol": "odontologo"}'
     assert CLAVE not in json.dumps([list(f) for f in filas]) and "ana@h.co" not in json.dumps([list(f) for f in filas])
@@ -235,7 +235,7 @@ def test_odontologo_no_gestiona_cuentas(db, idp):
     try:
         c = TestClient(app)
         assert c.get(f"{C}/gestion").status_code == 403
-        assert c.post(f"{C}/cuenta", json=_datos()).status_code == 403
+        assert c.post(C, json=_datos()).status_code == 403
         assert c.put(f"{C}/1/rol", json={"rol": "administrador"}).status_code == 403
     finally:
         app.dependency_overrides.clear()
@@ -270,7 +270,7 @@ def test_proveedor_rechaza_la_clave_422(admin, idp):
         raise IdentidadError("La contraseña es demasiado débil para la política del proveedor de identidad")
 
     idp.crear_usuario = debil
-    assert admin.post(f"{C}/cuenta", json=_datos()).status_code == 422
+    assert admin.post(C, json=_datos()).status_code == 422
 
 
 # --- cliente HTTP de Supabase (con transporte simulado) -------------------------------------------------------
@@ -353,3 +353,40 @@ def test_cliente_supabase_sin_conexion_y_respuesta_no_json():
     assert exc.value.sin_conexion
     with pytest.raises(IdentidadError):
         _cliente(lambda req: httpx.Response(400, text="<html>")).bloquear("1", True)
+
+
+def test_post_unico_sin_password_crea_solo_la_ficha(admin, idp):
+    antes = len(idp.usuarios)
+    d = {k: v for k, v in _datos().items() if k != "password"}
+    r = admin.post(C, json=d)
+    assert r.status_code == 201 and r.json()["tiene_cuenta"] is False and r.json()["rol"] is None
+    assert len(idp.usuarios) == antes  # no se creó ninguna cuenta
+
+
+def test_post_enlaza_cuenta_existente_con_auth_id(admin, idp):
+    d = {k: v for k, v in _datos().items() if k != "password"}
+    r = admin.post(C, json={**d, "auth_id": "auth|admin"})
+    assert r.status_code == 201 and r.json()["tiene_cuenta"] is True
+
+
+def test_post_no_acepta_password_y_auth_id_juntos(admin):
+    assert admin.post(C, json=_datos(auth_id="auth|x")).status_code == 422
+
+
+def test_post_con_password_sin_llave_503(db, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    get_settings.cache_clear()
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+        sub="a", email=None, roles=frozenset({"administrador"})
+    )
+    try:
+        c = TestClient(app)
+        assert c.post(C, json=_datos()).status_code == 503
+        sin = {k: v for k, v in _datos().items() if k != "password"}
+        assert c.post(C, json=sin).status_code == 201  # la ficha sola no necesita el proveedor
+    finally:
+        app.dependency_overrides.clear()
+        get_settings.cache_clear()

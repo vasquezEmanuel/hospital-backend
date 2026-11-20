@@ -45,6 +45,12 @@ GRANT INSERT, UPDATE ON public.aseguradora, public.tratamiento, public.profesion
 -- Sprint 8: importaciones. cie10 solo INSERT (el catálogo se carga una vez por el endpoint; editarlo cambia qué códigos
 -- acepta la regla 2, así que UPDATE/DELETE siguen siendo solo del propietario, por consola).
 GRANT INSERT ON public.cie10 TO hospital_api;
+-- Editar una atención (PATCH /atenciones/{id}): solo estas columnas; paciente, llave y fecha de registro no se tocan.
+-- DELETE únicamente sobre atencion_x_tratamiento (enlaces atención-tratamiento, para reemplazar la lista de tratamientos);
+-- ninguna otra tabla clínica admite DELETE.
+GRANT UPDATE (fecha_atencion, hora_atencion, id_aseguradora, ubicacion, id_profesional, profesional_texto,
+              plan_tratamiento, observaciones) ON public.atencion TO hospital_api;
+GRANT DELETE ON public.atencion_x_tratamiento TO hospital_api;
 GRANT INSERT, UPDATE ON public.importacion, public.importacion_fila TO hospital_api;
 -- Secuencias (llaves autonumeradas) de las tablas donde la API inserta; se buscan por tabla, no por nombre.
 DO $$ DECLARE t text; s text; BEGIN
@@ -114,3 +120,9 @@ DO $$ DECLARE t text; BEGIN
     EXECUTE format('CREATE POLICY api_actualizar ON public.%I FOR UPDATE TO hospital_api USING (true) WITH CHECK (true)', t);
   END LOOP;
 END $$;
+
+-- Edición de atenciones: UPDATE de atencion y reemplazo de sus enlaces de tratamientos.
+DROP POLICY IF EXISTS api_actualizar ON public.atencion;
+CREATE POLICY api_actualizar ON public.atencion FOR UPDATE TO hospital_api USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS api_borrar ON public.atencion_x_tratamiento;
+CREATE POLICY api_borrar ON public.atencion_x_tratamiento FOR DELETE TO hospital_api USING (true);

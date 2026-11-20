@@ -84,7 +84,9 @@ def crear_profesional(db: Session, datos: ProfesionalCreate) -> ProfesionalAdmin
     )
     if choque:
         raise ConflictError(f"Ya existe un profesional con ese {choque}")
-    p = catalogo_repo.agregar(db, Profesional(**datos.model_dump(), activo=True))
+    p = catalogo_repo.agregar(
+        db, Profesional(**datos.model_dump(include=set(ProfesionalCreate.model_fields)), activo=True)
+    )
     db.commit()
     return _prof_admin(p)
 

@@ -27,6 +27,7 @@ from app.schemas.atencion import (
     AtencionCreate,
     AtencionDetalle,
     AtencionListItem,
+    AtencionUpdate,
     PacienteResumen,
 )
 from app.schemas.common import Page
@@ -233,4 +234,55 @@ def crear(db: Session, almacen: Almacenamiento, datos: AtencionCreate, *, auth_s
     return obtener(db, almacen, atencion.public_id)
 
 
-__all__ = ["armar", "codigo_atencion", "crear", "listar", "obtener", "Tratamiento"]
+def paciente_de(db: Session, id_atencion: UUID) -> UUID | None:
+    """UUID del paciente de una atención (para auditar antes de modificarla); None si la atención no existe."""
+    fila = atencion_repo.obtener(db, id_atencion)
+    return fila[1].public_id if fila else None
+
+
+_COLUMNAS_EDITABLES = (
+    "fecha_atencion",
+    "hora_atencion",
+    "id_aseguradora",
+    "ubicacion",
+    "id_profesional",
+    "profesional_texto",
+    "plan_tratamiento",
+    "observaciones",
+)
+
+
+def actualizar(db: Session, almacen: Almacenamiento, id_atencion: UUID, datos: AtencionUpdate) -> AtencionDetalle:
+    fila = atencion_repo.obtener(db, id_atencion)
+    if fila is None:
+        raise NotFoundError("Atención no encontrada")
+    atencion, _ = fila
+    enviados = datos.model_fields_set
+    if "id_aseguradora" in enviados:
+        _activo(db, Aseguradora, datos.id_aseguradora, "Aseguradora")
+    if "id_profesional" in enviados:
+        _activo(db, Profesional, datos.id_profesional, "Profesional")
+    nuevos_tratamientos = None
+    if "ids_tratamientos" in enviados:
+        pedidos = set(datos.ids_tratamientos or [])
+        nuevos_tratamientos = atencion_repo.tratamientos_por_ids(db, sorted(pedidos))
+        if {t.id_tratamiento for t in nuevos_tratamientos} != pedidos:
+            raise DatosInvalidosError("Algún tratamiento no existe")
+        actuales = {t.id_tratamiento for t in atencion.tratamientos}
+        if any(not t.activo and t.id_tratamiento not in actuales for t in nuevos_tratamientos):
+            raise DatosInvalidosError("Algún tratamiento está inactivo")
+    for campo in _COLUMNAS_EDITABLES:
+        if campo in enviados:
+            setattr(atencion, campo, getattr(datos, campo))
+    if nuevos_tratamientos is not None:
+        atencion.tratamientos = sorted(nuevos_tratamientos, key=lambda t: t.nombre)
+    try:
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise DatosInvalidosError("La base de datos rechazó el cambio") from exc
+    db.refresh(atencion)
+    return obtener(db, almacen, id_atencion)
+
+
+__all__ = ["actualizar", "armar", "codigo_atencion", "crear", "listar", "obtener", "paciente_de", "Tratamiento"]

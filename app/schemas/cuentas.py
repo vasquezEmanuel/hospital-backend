@@ -6,10 +6,10 @@ La contraseña solo entra (crear / cambiar): nunca se guarda en nuestra base, ni
 import re
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
 
 from app.core.config import get_settings
-from app.schemas.catalogos import ProfesionalAdminOut
+from app.schemas.catalogos import ProfesionalAdminOut, ProfesionalCreate
 
 Rol = Literal["odontologo", "administrador"]
 
@@ -28,23 +28,24 @@ def _contrasena_valida(v: str) -> str:
 Contrasena = Annotated[str, Field(max_length=72), AfterValidator(_contrasena_valida)]
 
 
-class CuentaCreate(BaseModel):
-    nombre: str = Field(min_length=3, max_length=150, examples=["Dra. Ana Pérez"])
-    identificacion: str = Field(min_length=4, max_length=20)
-    correo: EmailStr
-    especializacion: str | None = Field(default=None, max_length=150)
-    password: Contrasena
-    rol: Rol = "odontologo"
+class ProfesionalCrear(ProfesionalCreate):
+    """Crear un profesional. Con `password` también se crea su cuenta (con `rol`); sin `password` solo la ficha
+    (p. ej. un profesional histórico que no usa el sistema). `auth_id` enlaza una cuenta que ya existe: no se combina
+    con `password`."""
 
-    @field_validator("nombre")
-    @classmethod
-    def _nombre(cls, v: str) -> str:
-        return " ".join(v.split())
+    password: Contrasena | None = None
+    rol: Rol = "odontologo"
 
     @field_validator("correo")
     @classmethod
     def _correo(cls, v: str) -> str:
         return v.lower()
+
+    @model_validator(mode="after")
+    def _exclusivos(self):
+        if self.password and self.auth_id:
+            raise ValueError("Envía `password` (crear la cuenta) o `auth_id` (enlazar una existente), no ambos")
+        return self
 
 
 class CuentaExistente(BaseModel):

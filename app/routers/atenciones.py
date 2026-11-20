@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.security import CurrentUser, require_clinical_staff
 from app.db.session import get_db
 from app.middleware.auditoria import Auditor, get_auditor
-from app.schemas.atencion import AtencionCreate, AtencionDetalle, AtencionListItem
+from app.schemas.atencion import AtencionCreate, AtencionDetalle, AtencionListItem, AtencionUpdate
 from app.schemas.common import ErrorResponse, Page
 from app.services import atencion_service, auditoria_service
 from app.services.almacenamiento import Almacenamiento, get_almacenamiento
@@ -121,3 +121,39 @@ def detalle_atencion(
         detalle={"id_atencion": str(id_atencion)},
     )
     return detalle
+
+
+@router.patch(
+    "/{id_atencion}",
+    response_model=AtencionDetalle,
+    summary="Modificar una atención (plan de tratamiento, tratamientos, observaciones, aseguradora...)",
+    description=(
+        "Solo se modifican los campos enviados; `null` borra un dato opcional. `ids_tratamientos` reemplaza la lista "
+        "completa (envía `[]` para quitarla). El paciente y los diagnósticos no se editan por aquí."
+    ),
+    responses={
+        404: {"model": ErrorResponse, "description": "La atención no existe"},
+        422: {"model": ErrorResponse, "description": "Catálogo inexistente/inactivo o fecha inválida"},
+    },
+)
+def modificar_atencion(
+    id_atencion: UUID,
+    datos: AtencionUpdate,
+    db: Session = Depends(get_db),
+    almacen: Almacenamiento = Depends(get_almacenamiento),
+    auditor: Auditor = Depends(get_auditor),
+    _: CurrentUser = Depends(require_clinical_staff),
+):
+    # Regla 6: se audita antes de modificar, con los NOMBRES de los campos (nunca los valores clínicos).
+    auditor.registrar(
+        "editar_atencion",
+        "atencion",
+        id_paciente=atencion_service.paciente_de(db, id_atencion),
+        detalle={"id_atencion": str(id_atencion), "campos": sorted(datos.model_fields_set)},
+    )
+    try:
+        return atencion_service.actualizar(db, almacen, id_atencion, datos)
+    except NotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except DatosInvalidosError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc

@@ -119,6 +119,7 @@ Todas las rutas llevan `Authorization: Bearer <token>`. Leer: odontólogo o admi
 | Nueva atención (listas desplegables) | `GET /api/v1/aseguradoras` · `GET /api/v1/tratamientos` · `GET /api/v1/profesionales` · `GET /api/v1/profesionales/yo` |
 | Guardar atención | `POST /api/v1/atenciones` (JSON de abajo) → 201 con el detalle |
 | Detalle de atención | `GET /api/v1/atenciones/{id_atencion}` (UUID) |
+| **Modificar una atención** (plan de tratamiento, tratamientos, observaciones...) | `PATCH /api/v1/atenciones/{id_atencion}` (ver abajo) |
 | Administrar catálogos (admin) | `POST` y `PATCH /{id}` en `/aseguradoras`, `/tratamientos`, `/profesionales`; inactivar = `PATCH {"activo": false}` |
 
 ```json
@@ -142,6 +143,10 @@ Todas las rutas llevan `Authorization: Bearer <token>`. Leer: odontólogo o admi
 - Cada diagnóstico bucal necesita **al menos un código odontológico**; el de hospitalización puede ser cualquier código (o ir solo con texto).
 - Si no se envía `id_profesional` ni `profesional_texto`, se usa el profesional enlazado al usuario que inicia sesión (`profesional.auth_id` = su id en Supabase Auth).
 - La fecha no puede ser futura. Errores: 404 paciente inexistente, 422 catálogo inexistente/inactivo o código no válido.
+- **PATCH de una atención:** envía solo los campos que cambian. Editables: `fecha_atencion` (no futura), `hora_atencion`, `id_aseguradora`, `ubicacion`, `id_profesional`, `profesional_texto`, `plan_tratamiento`, `observaciones` e `ids_tratamientos`. `null` borra un dato opcional (no la fecha). `ids_tratamientos` **reemplaza la lista completa** (`[]` la deja vacía). Responde 200 con el detalle actualizado. No se cambian el paciente ni los diagnósticos por esta ruta. Cuerpo vacío o sin campos → 422; atención inexistente → 404; catálogo inexistente o inactivo → 422.
+  ```json
+  { "plan_tratamiento": "Operatoria en 16 y 17. Control en 1 mes", "ids_tratamientos": [1, 2] }
+  ```
 - Las imágenes de la atención se suben después con `POST /api/v1/imagenes` enviando `id_atencion` (y opcionalmente `id_diagnostico_bucal`).
 - El expediente y el detalle ahora incluyen `codigo_atencion` (ej. `A007`, solo para mostrar) y `tratamientos`.
 
@@ -193,19 +198,22 @@ const url = URL.createObjectURL(await r.blob());
 Object.assign(document.createElement("a"), { href: url, download: `reporte_${tipo}.xlsx` }).click();
 ```
 
-## 8. Cuentas de profesionales (pestaña "Gestión de profesionales")
+## 8. Profesionales y sus cuentas (pestaña "Gestión de profesionales")
 
-**Solo rol `administrador`** (odontólogo recibe 403). Una acción crea la cuenta de acceso y el profesional, ya enlazados. El rol vive en el proveedor de identidad, no en nuestra base.
+**Solo rol `administrador`**, salvo las dos listas de lectura. Todas las rutas están bajo `/api/v1/profesionales`. Una sola acción crea la cuenta de acceso y el profesional, ya enlazados. El rol vive en el proveedor de identidad, no en nuestra base.
 
 | Pantalla / acción | Llamada |
 |---|---|
-| Lista de la pestaña | `GET /api/v1/profesionales/gestion` → `[{id_profesional, nombre, identificacion, correo, especializacion, activo, tiene_cuenta, rol, cuenta_bloqueada}]` |
-| **Formulario de creación** | `POST /api/v1/profesionales/cuenta` |
-| Crear cuenta de un profesional que ya existe sin ella | `POST /api/v1/profesionales/{id}/cuenta` con `{"password": "...", "rol": "odontologo"}` |
-| Activar / desactivar | `PATCH /api/v1/profesionales/{id}` con `{"activo": false}` (bloquea también el acceso) |
+| Desplegable "Profesional" en Nueva atención (cualquier personal clínico) | `GET /api/v1/profesionales` → `[{id_profesional, nombre, especializacion, activo}]` |
+| Perfil del usuario que inició sesión | `GET /api/v1/profesionales/yo` (404 si su cuenta no tiene profesional enlazado) |
+| Lista de la pestaña de gestión (admin) | `GET /api/v1/profesionales/gestion` → `[{id_profesional, nombre, identificacion, correo, especializacion, activo, tiene_cuenta, rol, cuenta_bloqueada}]` |
+| **Formulario de creación (admin)** | `POST /api/v1/profesionales` (ver abajo) |
+| Crear la cuenta de un profesional que ya existe sin ella | `POST /api/v1/profesionales/{id}/cuenta` con `{"password": "...", "rol": "odontologo"}` |
+| Editar datos / activar / desactivar | `PATCH /api/v1/profesionales/{id}` con p. ej. `{"activo": false}` (bloquea también el acceso) |
 | Nueva contraseña (la define el administrador) | `PUT /api/v1/profesionales/{id}/password` con `{"password": "..."}` → 204 |
 | Cambiar rol | `PUT /api/v1/profesionales/{id}/rol` con `{"rol": "odontologo" \| "administrador"}` |
 
+**Crear (una sola ruta, `POST /api/v1/profesionales`):**
 ```json
 {
   "nombre": "Dra. Ana Pérez",
@@ -216,13 +224,18 @@ Object.assign(document.createElement("a"), { href: url, download: `reporte_${tip
   "rol": "odontologo"
 }
 ```
+- **Con `password`:** crea la ficha **y** la cuenta de acceso con ese `rol` (`odontologo` por defecto). Es lo que usa el formulario.
+- **Sin `password`:** crea solo la ficha (por ejemplo, un profesional histórico que no usa el sistema).
+- `auth_id` (opcional) enlaza una cuenta que ya existe; no se combina con `password` (422).
+- **Cambio respecto a la versión anterior de esta guía:** la ruta `POST /api/v1/profesionales/cuenta` **ya no existe**; usa `POST /api/v1/profesionales`.
 
+**Reglas y errores**
 - **Contraseña:** mínimo 10 caracteres, con letras y números, sin espacios al inicio ni al final. Si no cumple → 422 con el motivo (el 422 no repite la contraseña).
-- El correo se guarda en minúsculas. Errores: **409** correo o documento ya registrados / te quitarías el rol de administrador a ti mismo / no quedaría ningún administrador activo; **422** datos inválidos; **502** el proveedor de identidad no respondió; **503** la gestión de cuentas no está configurada en el servidor.
-- Reglas que el front puede anticipar: un administrador **no puede desactivarse ni quitarse el rol a sí mismo**; no se puede dejar al sistema sin un administrador activo.
-- Un profesional **desactivado** pierde el acceso de inmediato: cualquier llamada suya responde **403 "Cuenta desactivada"**. En ese caso el front debe cerrar la sesión y mostrar el aviso.
-- **Perfil de usuario:** `GET /api/v1/profesionales/yo` responde 404 si el usuario no tiene profesional enlazado (como la cuenta administradora inicial). Las cuentas creadas desde esta pestaña siempre quedan enlazadas.
-- **Cambiar la propia contraseña** y **"olvidé mi contraseña"** no pasan por esta API: se hacen directo con Supabase en el front (`supabase.auth.updateUser({ password })` y `supabase.auth.resetPasswordForEmail(correo)`).
+- El correo se guarda en minúsculas. **409:** correo o documento ya registrados / te quitarías el rol de administrador a ti mismo / no quedaría ningún administrador activo. **422:** datos inválidos. **502:** el proveedor de identidad no respondió. **503:** la gestión de cuentas no está configurada en el servidor.
+- Un administrador **no puede desactivarse ni quitarse el rol a sí mismo**; el sistema no puede quedarse sin un administrador activo.
+- Un profesional **desactivado** pierde el acceso de inmediato: cualquier llamada suya responde **403 "Cuenta desactivada"**. El front debe cerrar la sesión y mostrar el aviso.
+- Las cuentas creadas desde esta pestaña siempre quedan enlazadas a su profesional (así "Perfil de usuario" muestra sus datos).
+- **Cambiar la propia contraseña** y **"olvidé mi contraseña"** no pasan por esta API: se hacen directo con Supabase en el front (`supabase.auth.updateUser({ password })`). La recuperación por correo requiere configurar el envío de correos en Supabase y hoy está fuera de alcance; mientras tanto, el administrador define una contraseña nueva con `PUT .../password`.
 - El método `PUT` ya está permitido en CORS.
 
 ## 9. Cosas que suelen fallar

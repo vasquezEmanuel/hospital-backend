@@ -106,6 +106,25 @@ def test_la_api_puede_importar_pero_el_catalogo_cie10_solo_se_inserta(api):
     api.execute(text("UPDATE importacion_fila SET estado = 'resuelta' WHERE id_importacion = :i"), {"i": imp})
 
 
+def test_la_api_puede_editar_atenciones_y_reemplazar_tratamientos(api):
+    """PATCH /atenciones: UPDATE de columnas editables y DELETE solo de los enlaces atención-tratamiento."""
+    pac = api.execute(
+        text("INSERT INTO paciente (documento_identidad, nombre) VALUES ('9990003', 'Prueba P') RETURNING id_paciente")
+    ).scalar_one()
+    trat = api.execute(
+        text("INSERT INTO tratamiento (nombre) VALUES ('T PATCH') RETURNING id_tratamiento")
+    ).scalar_one()
+    at = api.execute(
+        text("INSERT INTO atencion (id_paciente, fecha_atencion) VALUES (:p, now()) RETURNING id_atencion"), {"p": pac}
+    ).scalar_one()
+    api.execute(text("INSERT INTO atencion_x_tratamiento VALUES (:a, :t)"), {"a": at, "t": trat})
+    api.execute(
+        text("UPDATE atencion SET plan_tratamiento = 'x', observaciones = 'y', ubicacion = 'z' WHERE id_atencion = :a"),
+        {"a": at},
+    )
+    api.execute(text("DELETE FROM atencion_x_tratamiento WHERE id_atencion = :a"), {"a": at})
+
+
 @pytest.mark.parametrize(
     "sql",
     [
@@ -119,7 +138,9 @@ def test_la_api_puede_importar_pero_el_catalogo_cie10_solo_se_inserta(api):
         "DELETE FROM cie10",
         "DELETE FROM importacion",
         "DELETE FROM importacion_fila",
-        "UPDATE atencion SET observaciones = 'no debe'",
+        "UPDATE atencion SET id_paciente = 1",
+        "UPDATE atencion SET creado_en = now()",
+        "DELETE FROM diagnostico_hospitalario",
         "DELETE FROM atencion",
         "DELETE FROM diagnostico_bucal",
         "UPDATE diagnostico_bucal SET descripcion = 'no debe'",
