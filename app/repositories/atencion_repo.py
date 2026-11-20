@@ -119,3 +119,22 @@ def agregar(db: Session, atencion: Atencion) -> Atencion:
     db.add(atencion)
     db.flush()
     return atencion
+
+
+def bucal_por_public_id(db: Session, public_id: UUID) -> DiagnosticoBucal | None:
+    """Diagnóstico bucal ACTIVO por su identificador público (regla 5: los inactivos no se tocan)."""
+    d = db.scalar(select(DiagnosticoBucal).where(DiagnosticoBucal.public_id == public_id))
+    return d if d is not None and d.activo else None
+
+
+def hospitalario_de(db: Session, id_atencion: int) -> DiagnosticoHospitalario | None:
+    """Diagnóstico de hospitalización de la atención, activo o no (UNIQUE por atención: se reactiva, no se duplica)."""
+    return db.scalar(select(DiagnosticoHospitalario).where(DiagnosticoHospitalario.id_atencion == id_atencion))
+
+
+def paciente_publico_de_atencion(db: Session, id_atencion: int) -> UUID | None:
+    return db.scalar(
+        select(Paciente.public_id)
+        .join(Atencion, Atencion.id_paciente == Paciente.id_paciente)
+        .where(Atencion.id_atencion == id_atencion)
+    )

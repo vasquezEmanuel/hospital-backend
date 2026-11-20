@@ -16,7 +16,7 @@ from app.core.security import require_clinical_staff
 from app.db.session import get_db
 from app.middleware.auditoria import Auditor, get_auditor
 from app.schemas.common import ErrorResponse, Page
-from app.schemas.imagen import ImagenOut
+from app.schemas.imagen import ImagenOut, ImagenUpdate
 from app.schemas.importacion import LoteImagenesOut, ResultadoImagenLote
 from app.services import auditoria_service, imagen_service
 from app.services.almacenamiento import Almacenamiento, get_almacenamiento
@@ -198,6 +198,37 @@ def obtener_imagen(
         return imagen_service.obtener(db, almacen, id_imagen)
     except NotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+@router.patch(
+    "/{id_imagen}",
+    response_model=ImagenOut,
+    summary="Reasignar la atención y/o el diagnóstico bucal de una imagen",
+    description=(
+        "`null` desvincula (la imagen sigue siendo del paciente, regla 4). Un diagnóstico implica su atención; si "
+        "cambias solo la atención, el diagnóstico anterior se desvincula. Todo debe ser del mismo paciente."
+    ),
+    responses={
+        404: {"model": ErrorResponse},
+        422: {"model": ErrorResponse, "description": "La atención o el diagnóstico no es de este paciente"},
+    },
+)
+def reasignar_imagen(
+    id_imagen: UUID,
+    datos: ImagenUpdate,
+    db: Session = Depends(get_db),
+    almacen: Almacenamiento = Depends(get_almacenamiento),
+    auditor: Auditor = Depends(get_auditor),
+):
+    auditor.registrar(
+        "editar_imagen", "imagen", id_imagen=id_imagen, detalle={"campos": sorted(datos.model_fields_set)}
+    )
+    try:
+        return imagen_service.reasignar(db, almacen, id_imagen, datos)
+    except NotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except DatosInvalidosError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
 
 @router.delete(

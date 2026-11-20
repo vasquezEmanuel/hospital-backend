@@ -17,6 +17,7 @@ from app.routers import (
     catalogos,
     cie10,
     cuentas,
+    diagnosticos,
     enfermedades,
     expediente,
     health,
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(imagenes.router, prefix="/api/v1")
     app.include_router(archivos.router, prefix="/api/v1")
     app.include_router(atenciones.router, prefix="/api/v1")
+    app.include_router(diagnosticos.router, prefix="/api/v1")
     app.include_router(catalogos.aseguradoras, prefix="/api/v1")
     app.include_router(catalogos.tratamientos, prefix="/api/v1")
     app.include_router(catalogos.profesionales, prefix="/api/v1")

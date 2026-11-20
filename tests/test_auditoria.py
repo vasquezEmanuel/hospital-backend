@@ -18,6 +18,7 @@ from app.routers import (
     atenciones,
     auditoria,
     cuentas,
+    diagnosticos,
     enfermedades,
     expediente,
     imagenes,
@@ -77,9 +78,10 @@ def test_cada_ruta_de_datos_de_pacientes_declara_el_auditor():
         reportes.router,
         reportes.inicio,
         cuentas.router,
+        diagnosticos.router,
     )
     rutas = [r for router in routers for r in router.routes if isinstance(r, APIRoute)]
-    assert len(rutas) == 30  # si se agrega una ruta, esta prueba obliga a decidir cómo se audita
+    assert len(rutas) == 36  # si se agrega una ruta, esta prueba obliga a decidir cómo se audita
     sin_auditor = [
         f"{sorted(r.methods)} {r.path}"
         for r in rutas

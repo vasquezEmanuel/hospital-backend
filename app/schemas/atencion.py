@@ -119,3 +119,21 @@ class AtencionDetalle(AtencionExpediente):
     """Detalle de una atención: todo lo del expediente + paciente."""
 
     paciente: PacienteResumen
+
+
+class DiagnosticoBucalUpdate(BaseModel):
+    """PATCH de un diagnóstico bucal: solo lo enviado cambia. `codigos` reemplaza la lista completa (mínimo uno)."""
+
+    descripcion: str | None = Field(default=None, min_length=2, max_length=2000)
+    codigos: list[str] | None = Field(default=None, min_length=1, max_length=10)
+
+    @field_validator("codigos")
+    @classmethod
+    def _codigos(cls, v: list[str] | None) -> list[str] | None:
+        return list(dict.fromkeys(_codigo(c) for c in v)) if v else v
+
+    @model_validator(mode="after")
+    def _algo_que_cambiar(self) -> "DiagnosticoBucalUpdate":
+        if not self.model_fields_set or self.descripcion is None and self.codigos is None:
+            raise ValueError("Envía descripcion y/o codigos")
+        return self

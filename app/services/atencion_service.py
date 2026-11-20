@@ -163,6 +163,21 @@ def _activo(db: Session, modelo, id_: int | None, etiqueta: str) -> None:
         raise DatosInvalidosError(f"{etiqueta} {id_} no existe o está inactivo")
 
 
+def validar_codigos(db: Session, codigos_bucales: list[str], cod_hospitalario: str | None = None) -> dict[str, Cie10]:
+    """Regla 2: todos los códigos existen en el catálogo y los de diagnóstico bucal son odontológicos."""
+    pedidos = set(codigos_bucales) | ({cod_hospitalario} if cod_hospitalario else set())
+    existentes = atencion_repo.codigos_existentes(db, sorted(pedidos))
+    faltan = sorted(pedidos - existentes.keys())
+    if faltan:
+        raise DatosInvalidosError("Códigos CIE-10 que no existen en el catálogo: " + ", ".join(faltan))
+    no_odonto = sorted({c for c in codigos_bucales if not existentes[c].es_odontologico})
+    if no_odonto:
+        raise DatosInvalidosError(
+            "Un diagnóstico bucal solo admite códigos odontológicos; no lo son: " + ", ".join(no_odonto)
+        )
+    return existentes
+
+
 def crear(db: Session, almacen: Almacenamiento, datos: AtencionCreate, *, auth_sub: str) -> AtencionDetalle:
     paciente = paciente_repo.obtener(db, datos.id_paciente)
     if paciente is None:
@@ -180,16 +195,7 @@ def crear(db: Session, almacen: Almacenamiento, datos: AtencionCreate, *, auth_s
     # Regla 2: hospitalario = cualquier código existente; bucal = código existente Y odontológico.
     dh = datos.diagnostico_hospitalario
     hosp_cod = normalizar_codigo(dh.cod_4) if dh and dh.cod_4 else None
-    pedidos_cie = {c for d in datos.diagnosticos_bucales for c in d.codigos} | ({hosp_cod} if hosp_cod else set())
-    existentes = atencion_repo.codigos_existentes(db, sorted(pedidos_cie))
-    faltan = sorted(pedidos_cie - existentes.keys())
-    if faltan:
-        raise DatosInvalidosError("Códigos CIE-10 que no existen en el catálogo: " + ", ".join(faltan))
-    no_odonto = sorted({c for d in datos.diagnosticos_bucales for c in d.codigos if not existentes[c].es_odontologico})
-    if no_odonto:
-        raise DatosInvalidosError(
-            "Un diagnóstico bucal solo admite códigos odontológicos; no lo son: " + ", ".join(no_odonto)
-        )
+    existentes = validar_codigos(db, [c for d in datos.diagnosticos_bucales for c in d.codigos], hosp_cod)
 
     # Profesional: el indicado; si no, el que está enlazado con el usuario que registra (auth_id = su "sub").
     id_prof, texto = datos.id_profesional, datos.profesional_texto
@@ -285,4 +291,14 @@ def actualizar(db: Session, almacen: Almacenamiento, id_atencion: UUID, datos: A
     return obtener(db, almacen, id_atencion)
 
 
-__all__ = ["actualizar", "armar", "codigo_atencion", "crear", "listar", "obtener", "paciente_de", "Tratamiento"]
+__all__ = [
+    "actualizar",
+    "armar",
+    "codigo_atencion",
+    "crear",
+    "listar",
+    "obtener",
+    "paciente_de",
+    "validar_codigos",
+    "Tratamiento",
+]

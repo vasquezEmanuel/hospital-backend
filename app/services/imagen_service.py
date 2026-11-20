@@ -17,7 +17,7 @@ from app.models import Atencion, DiagnosticoBucal
 from app.repositories import imagen_repo, paciente_repo
 from app.repositories.imagen_repo import FilaImagen
 from app.schemas.common import Page
-from app.schemas.imagen import ImagenOut
+from app.schemas.imagen import ImagenOut, ImagenUpdate
 from app.services.almacenamiento import Almacenamiento
 from app.services.errors import (
     ArchivoMuyGrandeError,
@@ -158,3 +158,24 @@ def inactivar(db: Session, id_imagen: uuid.UUID) -> None:
         raise NotFoundError("Imagen no encontrada")
     imagen.activo = False
     db.commit()
+
+
+def reasignar(db: Session, almacen: Almacenamiento, id_imagen: uuid.UUID, datos: ImagenUpdate) -> ImagenOut:
+    """Cambia la atención / el diagnóstico bucal al que se asocia la imagen (siempre del mismo paciente)."""
+    imagen = imagen_repo.obtener_activa(db, id_imagen)
+    fila = imagen_repo.obtener_fila(db, id_imagen)
+    if imagen is None or fila is None:
+        raise NotFoundError("Imagen no encontrada")
+    enviados = datos.model_fields_set
+    atencion_pub, dx_pub = fila[5], fila[6]
+    if "id_atencion" in enviados:
+        atencion_pub = datos.id_atencion
+        if "id_diagnostico_bucal" not in enviados:
+            dx_pub = None
+    if "id_diagnostico_bucal" in enviados:
+        dx_pub = datos.id_diagnostico_bucal
+        if "id_atencion" not in enviados:
+            atencion_pub = None  # se deduce del diagnóstico
+    imagen.id_atencion, imagen.id_diagnostico_bucal = _validar_vinculos(db, imagen.id_paciente, atencion_pub, dx_pub)
+    db.commit()
+    return obtener(db, almacen, id_imagen)

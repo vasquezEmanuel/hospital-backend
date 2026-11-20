@@ -390,3 +390,31 @@ def test_post_con_password_sin_llave_503(db, monkeypatch):
     finally:
         app.dependency_overrides.clear()
         get_settings.cache_clear()
+
+
+def test_baja_de_profesional_inactiva_la_ficha_y_bloquea_la_cuenta(admin, idp):
+    d = admin.post(C, json=_datos()).json()
+    r = admin.delete(f"{C}/{d['id_profesional']}")
+    assert r.status_code == 204
+    assert idp.usuarios[d["auth_id"]].bloqueado is True
+    fila = [x for x in admin.get(f"{C}/gestion").json() if x["id_profesional"] == d["id_profesional"]][0]
+    assert fila["activo"] is False and fila["cuenta_bloqueada"] is True  # la ficha se conserva
+    assert admin.delete(f"{C}/{d['id_profesional']}").status_code == 204  # idempotente
+    assert admin.patch(f"{C}/{d['id_profesional']}", json={"activo": True}).json()["activo"] is True
+    assert admin.delete(f"{C}/999999").status_code == 404
+
+
+def test_baja_de_profesional_sin_cuenta_y_protecciones(db, admin, idp):
+    sin = admin.post(C, json={"nombre": "Dr. Histórico", "identificacion": "6001", "correo": "h@h.co"}).json()
+    assert admin.delete(f"{C}/{sin['id_profesional']}").status_code == 204
+    db.add(Profesional(nombre="Yo Admin", identificacion="4445", correo="yo2@h.co", auth_id="auth|admin"))
+    db.flush()
+    yo = db.query(Profesional).filter_by(auth_id="auth|admin").one()
+    assert admin.delete(f"{C}/{yo.id_profesional}").status_code == 409  # no puede darse de baja a sí mismo
+    otro = admin.post(C, json=_datos(rol="administrador")).json()
+    idp.bloquear("auth|admin", True)
+    assert admin.delete(f"{C}/{otro['id_profesional']}").status_code == 409  # no puede quedar sin administrador
+
+
+def test_baja_de_profesional_solo_administrador(client):
+    assert client.delete(f"{C}/1").status_code == 403

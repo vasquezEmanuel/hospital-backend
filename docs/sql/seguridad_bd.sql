@@ -52,6 +52,11 @@ GRANT UPDATE (fecha_atencion, hora_atencion, id_aseguradora, ubicacion, id_profe
               plan_tratamiento, observaciones) ON public.atencion TO hospital_api;
 GRANT DELETE ON public.atencion_x_tratamiento TO hospital_api;
 GRANT INSERT, UPDATE ON public.importacion, public.importacion_fila TO hospital_api;
+-- Bajas y ediciones de diagnósticos: solo texto, código y `activo` (borrado lógico, regla 5); el vínculo con la atención
+-- no se reasigna. DELETE sobre la tabla puente únicamente para reemplazar los códigos CIE-10 de un diagnóstico bucal.
+GRANT UPDATE (descripcion, activo) ON public.diagnostico_bucal TO hospital_api;
+GRANT UPDATE (descripcion_original, cod_4, activo) ON public.diagnostico_hospitalario TO hospital_api;
+GRANT DELETE ON public.cie10_x_diagnostico_bucal TO hospital_api;
 -- Secuencias (llaves autonumeradas) de las tablas donde la API inserta; se buscan por tabla, no por nombre.
 DO $$ DECLARE t text; s text; BEGIN
   FOREACH t IN ARRAY ARRAY['paciente','imagen_clinica','auditoria','atencion','diagnostico_hospitalario',
@@ -126,3 +131,11 @@ DROP POLICY IF EXISTS api_actualizar ON public.atencion;
 CREATE POLICY api_actualizar ON public.atencion FOR UPDATE TO hospital_api USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS api_borrar ON public.atencion_x_tratamiento;
 CREATE POLICY api_borrar ON public.atencion_x_tratamiento FOR DELETE TO hospital_api USING (true);
+
+-- Bajas y ediciones de diagnósticos (ver los GRANT de arriba).
+DROP POLICY IF EXISTS api_actualizar ON public.diagnostico_bucal;
+CREATE POLICY api_actualizar ON public.diagnostico_bucal FOR UPDATE TO hospital_api USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS api_actualizar ON public.diagnostico_hospitalario;
+CREATE POLICY api_actualizar ON public.diagnostico_hospitalario FOR UPDATE TO hospital_api USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS api_borrar ON public.cie10_x_diagnostico_bucal;
+CREATE POLICY api_borrar ON public.cie10_x_diagnostico_bucal FOR DELETE TO hospital_api USING (true);

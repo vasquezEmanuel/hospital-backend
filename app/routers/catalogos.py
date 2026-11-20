@@ -4,7 +4,7 @@ Leer: odontólogo o administrador (alimentan las listas desplegables de 'Nueva a
 administrador, y queda en auditoría (sin datos de pacientes). Inactivar = PATCH {"activo": false}; nunca se borra.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.security import CurrentUser, require_admin, require_clinical_staff
@@ -75,6 +75,25 @@ def _catalogo(prefijo: str, etiqueta: str, modelo, singular: str) -> APIRouter:
             return catalogo_service.actualizar(db, modelo, id_, datos)
         except (NotFoundError, ConflictError) as exc:
             raise _traducir(exc) from exc
+
+    @r.delete(
+        "/{id_}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        summary=f"Dar de baja {singular} (admin): se inactiva, no se borra",
+        responses={404: {"model": ErrorResponse}},
+    )
+    def dar_de_baja(
+        id_: int,
+        db: Session = Depends(get_db),
+        auditor: Auditor = Depends(get_auditor),
+        _: CurrentUser = Depends(require_admin),
+    ):
+        auditor.registrar(f"baja_{singular}", singular, detalle={"id": id_})
+        try:
+            catalogo_service.actualizar(db, modelo, id_, CatalogoUpdate(activo=False))
+        except NotFoundError as exc:
+            raise _traducir(exc) from exc
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     return r
 
@@ -177,3 +196,33 @@ def editar_profesional(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     except ProveedorNoDisponibleError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+
+@profesionales.delete(
+    "/{id_profesional}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Dar de baja un profesional (admin): se inactiva y se bloquea su cuenta; la ficha se conserva",
+    description=(
+        "Baja lógica: el profesional tiene atenciones a su nombre, por eso la ficha nunca se borra. Se bloquea el "
+        'acceso de inmediato. Para reactivarlo: `PATCH /profesionales/{id}` con `{"activo": true}`. Un administrador '
+        "no puede darse de baja a sí mismo ni dejar el sistema sin administrador activo."
+    ),
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+)
+def dar_de_baja_profesional(
+    id_profesional: int,
+    db: Session = Depends(get_db),
+    auditor: Auditor = Depends(get_auditor),
+    identidad: ProveedorIdentidad | None = Depends(get_identidad_opcional),
+    user: CurrentUser = Depends(require_admin),
+):
+    auditor.registrar("baja_profesional", "profesional", detalle={"id": id_profesional})
+    try:
+        cuenta_service.actualizar_profesional(
+            db, identidad, id_profesional, ProfesionalUpdate(activo=False), auth_sub=user.sub
+        )
+    except (NotFoundError, ConflictError) as exc:
+        raise _traducir(exc) from exc
+    except ProveedorNoDisponibleError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

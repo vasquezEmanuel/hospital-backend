@@ -7,15 +7,22 @@ antes de entregar o modificar el dato. Rol: odontólogo o administrador.
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.security import CurrentUser, require_clinical_staff
 from app.db.session import get_db
 from app.middleware.auditoria import Auditor, get_auditor
-from app.schemas.atencion import AtencionCreate, AtencionDetalle, AtencionListItem, AtencionUpdate
+from app.schemas.atencion import (
+    AtencionCreate,
+    AtencionDetalle,
+    AtencionListItem,
+    AtencionUpdate,
+    DiagnosticoBucalIn,
+    DiagnosticoHospitalarioIn,
+)
 from app.schemas.common import ErrorResponse, Page
-from app.services import atencion_service, auditoria_service
+from app.services import atencion_service, auditoria_service, diagnostico_service
 from app.services.almacenamiento import Almacenamiento, get_almacenamiento
 from app.services.errors import DatosInvalidosError, NotFoundError
 
@@ -157,3 +164,92 @@ def modificar_atencion(
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except DatosInvalidosError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
+_DX = {
+    404: {"model": ErrorResponse, "description": "La atención no existe"},
+    422: {"model": ErrorResponse, "description": "Código CIE-10 inexistente o (en bucales) no odontológico"},
+}
+
+
+def _traducir(exc: Exception) -> HTTPException:
+    codigo = status.HTTP_404_NOT_FOUND if isinstance(exc, NotFoundError) else status.HTTP_422_UNPROCESSABLE_ENTITY
+    return HTTPException(codigo, str(exc))
+
+
+@router.post(
+    "/{id_atencion}/diagnosticos-bucales",
+    response_model=AtencionDetalle,
+    status_code=status.HTTP_201_CREATED,
+    summary="Agregar un diagnóstico bucal a una atención ya registrada; devuelve la atención completa",
+    responses=_DX,
+)
+def agregar_diagnostico_bucal(
+    id_atencion: UUID,
+    datos: DiagnosticoBucalIn,
+    db: Session = Depends(get_db),
+    almacen: Almacenamiento = Depends(get_almacenamiento),
+    auditor: Auditor = Depends(get_auditor),
+    _: CurrentUser = Depends(require_clinical_staff),
+):
+    auditor.registrar(
+        "agregar_diagnostico_bucal",
+        "diagnostico_bucal",
+        id_paciente=diagnostico_service.paciente_de_atencion(db, id_atencion),
+        detalle={"id_atencion": str(id_atencion)},
+    )
+    try:
+        return diagnostico_service.agregar_bucal(db, almacen, id_atencion, datos)
+    except (NotFoundError, DatosInvalidosError) as exc:
+        raise _traducir(exc) from exc
+
+
+@router.put(
+    "/{id_atencion}/diagnostico-hospitalario",
+    response_model=AtencionDetalle,
+    summary="Crear o reemplazar el diagnóstico de hospitalización (uno por atención)",
+    responses=_DX,
+)
+def guardar_diagnostico_hospitalario(
+    id_atencion: UUID,
+    datos: DiagnosticoHospitalarioIn,
+    db: Session = Depends(get_db),
+    almacen: Almacenamiento = Depends(get_almacenamiento),
+    auditor: Auditor = Depends(get_auditor),
+    _: CurrentUser = Depends(require_clinical_staff),
+):
+    auditor.registrar(
+        "guardar_diagnostico_hospitalario",
+        "diagnostico_hospitalario",
+        id_paciente=diagnostico_service.paciente_de_atencion(db, id_atencion),
+        detalle={"id_atencion": str(id_atencion)},
+    )
+    try:
+        return diagnostico_service.guardar_hospitalario(db, almacen, id_atencion, datos)
+    except (NotFoundError, DatosInvalidosError) as exc:
+        raise _traducir(exc) from exc
+
+
+@router.delete(
+    "/{id_atencion}/diagnostico-hospitalario",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Dar de baja el diagnóstico de hospitalización (borrado lógico)",
+    responses={404: {"model": ErrorResponse, "description": "La atención no existe o no tiene diagnóstico"}},
+)
+def inactivar_diagnostico_hospitalario(
+    id_atencion: UUID,
+    db: Session = Depends(get_db),
+    auditor: Auditor = Depends(get_auditor),
+    _: CurrentUser = Depends(require_clinical_staff),
+):
+    auditor.registrar(
+        "inactivar_diagnostico_hospitalario",
+        "diagnostico_hospitalario",
+        id_paciente=diagnostico_service.paciente_de_atencion(db, id_atencion),
+        detalle={"id_atencion": str(id_atencion)},
+    )
+    try:
+        diagnostico_service.inactivar_hospitalario(db, id_atencion)
+    except NotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
