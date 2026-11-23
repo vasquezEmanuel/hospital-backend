@@ -12,3 +12,6 @@ datos_demo/
 datos_reales/
 *.xls
 almacen_local/
+# Respaldos (datos de pacientes)
+respaldos/
+*.dump
