@@ -8,6 +8,15 @@ imágenes.
 **Equipo:** Steven Alipio Berrio · Robert Alexander Blandón Rincón · Emanuel Vásquez Yepes.
 **Contraparte clínica:** Dra. Gloria Alvarez, coordinadora del área de odontología.
 
+## En producción
+| Componente | Dirección |
+|---|---|
+| Aplicación web (front) | https://gestion-imagenes-odontologicas.vercel.app |
+| API (este repositorio) | https://hospital-backend-43np.onrender.com · estado: [`/health`](https://hospital-backend-43np.onrender.com/health) |
+
+El acceso es solo para personal autorizado del hospital: las cuentas las crea un administrador y no hay registro público.
+La documentación interactiva de la API está desactivada en producción.
+
 ## Funcionalidades
 - **Pacientes y expediente:** identificación única por documento; historial de atenciones, diagnósticos e imágenes.
 - **Atenciones:** fecha, aseguradora, profesional, plan de tratamiento, tratamientos y observaciones; diagnósticos
