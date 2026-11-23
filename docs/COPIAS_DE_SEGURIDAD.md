@@ -26,7 +26,7 @@ Requiere `pg_dump` / `pg_restore` (vienen con PostgreSQL 16 client tools) en el 
 1. Supabase → botón **Connect** → cadena de conexión *Session pooler* (puerto 5432) del usuario **`postgres`** (no `hospital_api`).
 2. Ejecutar (Linux/macOS/WSL/Git Bash):
    ```bash
-   export RESPALDO_DATABASE_URL='postgresql://postgres.oqqmchuzsqknmgtnfadu:CLAVE@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require'
+   export RESPALDO_DATABASE_URL='postgresql://postgres.REF_DEL_PROYECTO:CLAVE@HOST_DEL_POOLER.supabase.com:5432/postgres?sslmode=require'
    ./scripts/respaldo.sh ./respaldos
    ```
 3. El archivo `.dump` resultante tiene datos de pacientes: guardarlo **fuera del repositorio**, cifrado (disco cifrado o
