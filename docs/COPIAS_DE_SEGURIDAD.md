@@ -10,9 +10,15 @@ Qué hay que respaldar (son **dos** cosas distintas):
 Un respaldo de la base **sin** las imágenes deja las filas apuntando a archivos que ya no están, y al revés.
 
 ## 1. Lo que ofrece Supabase
-Entra a Supabase → **Database → Backups** y revisa qué cubre el plan del proyecto (copias diarias automáticas, cuántos días
-se conservan, y si hay recuperación a un punto en el tiempo). Los planes cambian: confirma ahí lo vigente. Si el plan no
-incluye copias automáticas, el punto 2 es obligatorio.
+Según la [documentación de Supabase](https://supabase.com/docs/guides/platform/backups) (verificada en noviembre de 2026; los planes cambian, confirmar en el panel):
+
+- **Plan Free:** no incluye copias automáticas. Hay que hacer el respaldo propio del punto 2.
+- **Plan Pro:** copias diarias automáticas, 7 días de retención (Team 14, Enterprise hasta 30). Se ven y restauran en **Database → Backups**.
+- **PITR (recuperación a un punto en el tiempo):** complemento de pago para Pro o superior; permite volver a un minuto concreto (máximo 2 minutos de pérdida). Al activarlo se dejan de hacer las copias diarias.
+- Las copias de Supabase **no se pueden descargar** desde el panel, y **no incluyen los archivos de Storage** (las imágenes): solo la base.
+- Restaurar reemplaza los datos actuales y el proyecto queda inaccesible mientras dura. Para no perder lo actual, restaurar primero en un proyecto nuevo.
+
+Conclusión: aunque se pase a Pro, el respaldo propio (punto 2) y el de imágenes (punto 3) siguen siendo necesarios.
 
 ## 2. Respaldo propio de la base (`scripts/respaldo.sh`)
 Requiere `pg_dump` / `pg_restore` (vienen con PostgreSQL 16 client tools) en el computador desde el que se ejecute.
