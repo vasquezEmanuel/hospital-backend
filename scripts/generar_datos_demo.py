@@ -1,6 +1,6 @@
 """Genera archivos SINTÉTICOS para probar el ETL y hacer demos. Carpeta: scripts/.
 
-Los nombres, documentos y códigos son inventados: NO son datos reales de pacientes (el repositorio es público).
+Los nombres, documentos y códigos son inventados y no corresponden a personas reales.
 Uso (desde la raíz del repo):  python -m scripts.generar_datos_demo
 Crea:  datos_demo/catalogo_cie10_demo.xlsx  y  datos_demo/atenciones_demo.xlsx
 """

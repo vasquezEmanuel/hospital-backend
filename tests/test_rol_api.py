@@ -51,7 +51,10 @@ def test_la_api_puede_leer_crear_y_modificar_pacientes_e_imagenes(api):
             "INSERT INTO paciente (documento_identidad, nombre) VALUES ('9990001', 'Prueba Rol') RETURNING id_paciente"
         )
     ).scalar_one()
-    api.execute(text("UPDATE paciente SET ciudad = 'Cali' WHERE id_paciente = :i"), {"i": id_})
+    api.execute(
+        text("UPDATE paciente SET ciudad = 'Cali', codigo_municipio = '76001' WHERE id_paciente = :i"), {"i": id_}
+    )
+    assert api.execute(text("SELECT count(*) FROM municipio")).scalar_one() > 1000  # los catálogos se leen
     api.execute(
         text(
             "INSERT INTO imagen_clinica (id_paciente, nombre_archivo, url_almacenamiento) VALUES (:i, 'a.png', 'k/a')"
@@ -174,6 +177,10 @@ def test_la_api_puede_corregir_e_inactivar_diagnosticos(api):
         "DELETE FROM diagnostico_hospitalario",
         "DELETE FROM atencion",
         "DELETE FROM diagnostico_bucal",
+        "INSERT INTO departamento (codigo, nombre) VALUES ('99', 'Inventado')",
+        "INSERT INTO municipio (codigo, nombre, codigo_departamento) VALUES ('99001', 'Inventado', '76')",
+        "UPDATE municipio SET nombre = 'x'",
+        "DELETE FROM departamento WHERE true",
         "UPDATE diagnostico_bucal SET id_atencion = 1",
         "UPDATE diagnostico_hospitalario SET id_atencion = 1",
         "DELETE FROM diagnostico_hospitalario WHERE true",

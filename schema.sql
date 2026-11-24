@@ -7,6 +7,8 @@
 -- v1.3: clave de almacenamiento única en imagen_clinica (ver alembic/versions/0004_*.py).
 -- v1.4: auditoría completa e inmutable (regla 6) (ver alembic/versions/0005_*.py).
 -- v1.5: identificador público UUID (public_id) en paciente, atencion, diagnostico_bucal e imagen_clinica (ver alembic/versions/0006_*.py).
+-- v1.6: departamento y municipio (DIVIPOLA del DANE) y paciente.codigo_municipio (ver alembic/versions/0007_*.py).
+--       Los datos de los dos catálogos se cargan con esa migración (alembic/data/*.csv); este archivo solo define su estructura.
 --       La línea base v1.0 vive intacta en alembic/sql/0001_baseline.sql.
 -- ============================================================================
 
@@ -57,6 +59,19 @@ CREATE TABLE profesional (
 -- Núcleo clínico
 -- ---------------------------------------------------------------------------
 
+CREATE TABLE departamento (
+    codigo  CHAR(2) PRIMARY KEY,            -- v1.6: código DANE (DIVIPOLA)
+    nombre  VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE municipio (
+    codigo               CHAR(5) PRIMARY KEY,   -- v1.6: código DANE; los 2 primeros dígitos son el departamento
+    nombre               VARCHAR(100) NOT NULL,
+    codigo_departamento  CHAR(2) NOT NULL REFERENCES departamento (codigo),
+    CONSTRAINT ck_municipio_departamento CHECK (substr(codigo, 1, 2) = codigo_departamento)
+);
+CREATE INDEX idx_municipio_departamento ON municipio (codigo_departamento);
+
 CREATE TABLE paciente (
     id_paciente         SERIAL PRIMARY KEY,
     public_id           UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,  -- v1.5: único identificador que expone la API (el SERIAL es interno)
@@ -67,9 +82,11 @@ CREATE TABLE paciente (
     sexo                CHAR(1) CHECK (sexo IN ('M', 'F', 'O')),  -- no existe en la fuente actual
     telefono            VARCHAR(20),                -- no existe en la fuente actual
     correo              VARCHAR(150),               -- no existe en la fuente actual
-    ciudad              VARCHAR(100),               -- v1.1: la ficha del paciente muestra la ciudad
+    ciudad              VARCHAR(100),               -- v1.1: nombre del municipio elegido, o texto libre si vive fuera del catálogo
+    codigo_municipio    CHAR(5) REFERENCES municipio (codigo),  -- v1.6: de aquí se deduce el departamento
     creado_en           TIMESTAMPTZ NOT NULL DEFAULT now()  -- v1.1
 );
+CREATE INDEX idx_paciente_municipio ON paciente (codigo_municipio);
 
 CREATE TABLE atencion (
     id_atencion         SERIAL PRIMARY KEY,

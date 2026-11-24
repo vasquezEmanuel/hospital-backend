@@ -77,8 +77,23 @@ def test_ficha_y_aseguradora_actual(client, seed):
     assert client.get("/api/v1/pacientes/00000000-0000-4000-8000-000000000000").status_code == 404
 
 
-def test_editar_no_cambia_el_documento(client, seed):
+def test_editar_datos_sin_tocar_el_documento(client, seed):
     pid = seed["carlos"].public_id
-    r = client.patch(f"/api/v1/pacientes/{pid}", json={"telefono": "3001234567", "documento_identidad": "1"})
+    r = client.patch(f"/api/v1/pacientes/{pid}", json={"telefono": "3001234567"})
     assert r.status_code == 200 and r.json()["telefono"] == "3001234567"
     assert r.json()["documento_identidad"] == "79421880"
+
+
+def test_corregir_el_documento_lo_normaliza_y_exige_que_siga_siendo_unico(client, seed):
+    pid = seed["carlos"].public_id
+    r = client.patch(f"/api/v1/pacientes/{pid}", json={"documento_identidad": "79.421.881"})
+    assert r.status_code == 200 and r.json()["documento_identidad"] == "79421881"
+    assert client.get("/api/v1/pacientes", params={"documento": "79421881"}).json()["total"] == 1
+    # el mismo valor que ya tiene no es conflicto; el de otro paciente sí
+    assert client.patch(f"/api/v1/pacientes/{pid}", json={"documento_identidad": "79421881"}).status_code == 200
+    otro = seed["maria"].documento_identidad
+    r = client.patch(f"/api/v1/pacientes/{pid}", json={"documento_identidad": otro})
+    assert r.status_code == 409
+    assert client.get(f"/api/v1/pacientes/{pid}").json()["documento_identidad"] == "79421881"
+    assert client.patch(f"/api/v1/pacientes/{pid}", json={"documento_identidad": "ab"}).status_code == 422
+    assert client.patch(f"/api/v1/pacientes/{pid}", json={"documento_identidad": None}).status_code == 422

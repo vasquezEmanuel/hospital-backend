@@ -109,6 +109,31 @@ Reglas para el front:
 - Para **mostrar** al usuario sigue usando `codigo` (p. ej. `P-007`) y los demás campos legibles. El `codigo` es solo para mostrar y buscar en el cuadro de texto: **no** sirve como identificador de ruta.
 - Si el id no existe, la respuesta es 404; si no tiene forma de UUID, 422.
 
+## 4.1 Pacientes: ubicación (departamento y municipio) y documento editable
+
+Los catálogos usan los **códigos oficiales del DANE**. Leer: odontólogo o administrador.
+
+| Para qué | Llamada |
+|---|---|
+| Lista de departamentos (33, orden alfabético) | `GET /api/v1/departamentos` → `[{"codigo":"76","nombre":"Valle del Cauca"}]` |
+| Municipios del departamento elegido | `GET /api/v1/departamentos/76/municipios` → `[{"codigo":"76001","nombre":"Santiago de Cali","codigo_departamento":"76","departamento":"Valle del Cauca"}]` |
+| Buscador de municipio (autocompletar) | `GET /api/v1/municipios?q=medell&codigo_departamento=05&limite=20` (sin tildes ni mayúsculas; `q` mínimo 2 letras) |
+
+**Flujo del formulario:** el usuario elige el departamento → el front pide `/departamentos/{codigo}/municipios` → el usuario elige el municipio → al guardar se envía **solo `codigo_municipio`**:
+
+```json
+POST /api/v1/pacientes
+{ "tipo_documento": "CC", "documento_identidad": "52.000.111", "nombre": "Ana Pérez", "codigo_municipio": "76001" }
+```
+
+La respuesta (y `GET /pacientes/{id}`) trae `codigo_municipio`, `municipio`, `codigo_departamento`, `departamento` y `ciudad` (= nombre del municipio). Para mostrar "Valle del Cauca · Santiago de Cali" basta con `departamento` y `municipio`.
+
+- El departamento **no se envía**: se deduce del municipio. Si se envía `ciudad` junto con `codigo_municipio`, manda el municipio.
+- Quien vive fuera de Colombia o en un lugar sin catálogo: omitir `codigo_municipio` y enviar solo `ciudad` como texto libre (queda `departamento: null`).
+- Editar: `PATCH /api/v1/pacientes/{id_paciente}` con `{"codigo_municipio": "08001"}`. `{"codigo_municipio": null}` quita la ubicación. Un código que no existe responde **422**.
+- Para precargar el formulario de edición: tomar `codigo_departamento` y `codigo_municipio` de la ficha, pedir los municipios de ese departamento y marcar el actual.
+- **El documento de identidad ya se puede corregir** con `PATCH /pacientes/{id_paciente}` y `{"documento_identidad": "..."}`: se normaliza igual que al crear y **409** si otro paciente ya lo tiene. Las imágenes y atenciones siguen asociadas al paciente (se enlazan por identificador interno, no por documento).
+
 ## 5. Atenciones y catálogos (Sprint 7)
 
 Todas las rutas llevan `Authorization: Bearer <token>`. Leer: odontólogo o administrador. Crear/editar catálogos: solo administrador.

@@ -1,6 +1,6 @@
 # Guía de demostración (Sprint 2)
 
-Todo con datos **sintéticos**. Nunca cargues datos reales de pacientes en un repositorio público.
+Todo con datos **sintéticos**.
 Terminal: PowerShell, en la carpeta del repo y con el entorno virtual activo (`.\.venv\Scripts\Activate.ps1`).
 
 ## 0. Preparación (una vez)

@@ -39,6 +39,13 @@ class _PacienteCampos(BaseModel):
         return v
 
 
+_MUNICIPIO = r"^\d{5}$"
+_DESC_MUNICIPIO = (
+    "Código DANE del municipio (GET /municipios). El departamento se deduce de él y `ciudad` se completa con su "
+    "nombre. Para quien vive fuera del catálogo, omitirlo y enviar solo `ciudad` como texto libre."
+)
+
+
 class PacienteCreate(_PacienteCampos):
     tipo_documento: TipoDocumento
     documento_identidad: str = Field(examples=["1.025.847.210"])
@@ -48,6 +55,9 @@ class PacienteCreate(_PacienteCampos):
     telefono: str | None = None
     correo: EmailStr | None = None
     ciudad: str | None = Field(default=None, max_length=100)
+    codigo_municipio: str | None = Field(
+        default=None, pattern=_MUNICIPIO, description=_DESC_MUNICIPIO, examples=["76001"]
+    )
 
     @field_validator("documento_identidad")
     @classmethod
@@ -61,15 +71,29 @@ class PacienteCreate(_PacienteCampos):
 
 
 class PacienteUpdate(_PacienteCampos):
-    """'Editar información'. El documento de identidad NO es editable (regla 1: es la identidad)."""
+    """'Editar información'. Solo cambia lo enviado. El documento puede corregirse, pero sigue siendo único (regla 1).
+
+    `codigo_municipio: null` quita la ubicación (y `ciudad`, salvo que se envíe otro texto).
+    """
 
     tipo_documento: TipoDocumento | None = None
+    documento_identidad: str | None = Field(default=None, examples=["1.025.847.210"])
     nombre: str | None = Field(default=None, min_length=3, max_length=150)
     fecha_nacimiento: date | None = None
     sexo: Sexo | None = None
     telefono: str | None = None
     correo: EmailStr | None = None
     ciudad: str | None = Field(default=None, max_length=100)
+    codigo_municipio: str | None = Field(
+        default=None, pattern=_MUNICIPIO, description=_DESC_MUNICIPIO, examples=["76001"]
+    )
+
+    @field_validator("documento_identidad")
+    @classmethod
+    def _doc(cls, v: str | None) -> str:
+        if v is None:
+            raise ValueError("El documento de identidad no puede quedar vacío")
+        return normalizar_documento(v)
 
 
 class PacienteListItem(BaseModel):
@@ -101,7 +125,11 @@ class PacienteOut(BaseModel):
     sexo: str | None
     telefono: str | None
     correo: str | None
-    ciudad: str | None
+    ciudad: str | None = Field(description="Nombre del municipio elegido, o el texto libre si no está en el catálogo")
+    codigo_municipio: str | None = None
+    municipio: str | None = None
+    codigo_departamento: str | None = None
+    departamento: str | None = None
     aseguradora_actual: str | None = Field(description="Aseguradora de la última atención")
     total_atenciones: int
     ultima_atencion: date | None

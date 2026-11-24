@@ -3,9 +3,6 @@
 Objetivo: tener la API en internet, con base de datos real y datos **sintéticos**, para demostrar el backend.
 Render ejecuta el contenedor (`Dockerfile`); Supabase aloja PostgreSQL. Las migraciones se aplican solas al arrancar.
 
-> **Solo datos sintéticos.** Esta configuración es una demostración: usa tokens de desarrollo y almacenamiento temporal.
-> No cargues datos reales de pacientes hasta tener proveedor de identidad (OIDC) y almacenamiento S3 (Sprint 5).
-
 ## 0. Antes de desplegar
 El CI de GitHub debe estar en verde (`pytest`, `ruff`, deriva de esquema, `pip-audit`).
 
@@ -62,7 +59,7 @@ python -m etl.cli catalogo   datos_demo\catalogo_cie10_demo.xlsx
 python -m etl.cli atenciones datos_demo\atenciones_demo.xlsx
 Remove-Item Env:DATABASE_URL
 ```
-Esperado: 5 códigos odontológicos; 6 atenciones insertadas, 1 omitida, 5 a revisión. **No olvides la última línea**: con
+Esperado: 5 códigos odontológicos; 6 atenciones insertadas, 1 omitida, 5 a revisión. La última línea es necesaria: con
 `DATABASE_URL` apuntando a Supabase, `pytest` intentaría crear una base de pruebas allí.
 
 ## 5. Tokens de demostración (rol odontólogo y rol administrador)

@@ -1,7 +1,7 @@
 """Recurso /pacientes. Carpeta: app/routers — Sprint 1.
 
 Pantallas: 'Pacientes' (lista + filtros), 'Nuevo paciente', ficha del paciente / 'Editar información'.
-Reglas: 1 (documento único) y 6 (toda consulta o modificación queda en auditoría, antes de ejecutarse).
+Reglas: 1 (documento único; editable, sin duplicados) y 6 (toda consulta o modificación se audita antes de ejecutarse).
 El expediente completo está en routers/expediente.py.
 """
 
@@ -17,7 +17,7 @@ from app.middleware.auditoria import Auditor, get_auditor
 from app.schemas.common import ErrorResponse, Page
 from app.schemas.paciente import PacienteCreate, PacienteListItem, PacienteOut, PacienteUpdate, Sexo
 from app.services import auditoria_service, paciente_service
-from app.services.errors import ConflictError, NotFoundError
+from app.services.errors import ConflictError, DatosInvalidosError, NotFoundError
 
 router = APIRouter(
     prefix="/pacientes",
@@ -63,7 +63,10 @@ def listar_pacientes(
     response_model=PacienteOut,
     status_code=status.HTTP_201_CREATED,
     summary="Registrar paciente",
-    responses={409: {"model": ErrorResponse, "description": "El documento ya está registrado"}},
+    responses={
+        409: {"model": ErrorResponse, "description": "El documento ya está registrado"},
+        422: {"model": ErrorResponse, "description": "Datos inválidos o municipio inexistente"},
+    },
 )
 def crear_paciente(datos: PacienteCreate, db: Session = Depends(get_db), auditor: Auditor = Depends(get_auditor)):
     auditor.registrar("crear_paciente", "paciente")
@@ -71,6 +74,8 @@ def crear_paciente(datos: PacienteCreate, db: Session = Depends(get_db), auditor
         return paciente_service.crear(db, datos)
     except ConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except DatosInvalidosError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
 
 @router.get(
@@ -90,8 +95,12 @@ def obtener_paciente(id_paciente: UUID, db: Session = Depends(get_db), auditor: 
 @router.patch(
     "/{id_paciente}",
     response_model=PacienteOut,
-    summary="Editar información del paciente (el documento no es editable)",
-    responses={404: {"model": ErrorResponse}},
+    summary="Editar información del paciente (incluido el documento y la ubicación)",
+    responses={
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse, "description": "Otro paciente ya tiene ese documento"},
+        422: {"model": ErrorResponse, "description": "Datos inválidos o municipio inexistente"},
+    },
 )
 def editar_paciente(
     id_paciente: UUID,
@@ -109,3 +118,7 @@ def editar_paciente(
         return paciente_service.actualizar(db, id_paciente, datos)
     except NotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except DatosInvalidosError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
