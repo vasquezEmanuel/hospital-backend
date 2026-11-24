@@ -1,9 +1,9 @@
-"""Entidad paciente (schema.sql v1.1). Regla 1: el documento de identidad es único."""
+"""Entidad paciente (schema.sql v1.6). Regla 1: el documento de identidad es único."""
 
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, String, Uuid, func, text
+from sqlalchemy import CHAR, Date, DateTime, ForeignKey, String, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -24,4 +24,5 @@ class Paciente(Base):
     telefono: Mapped[str | None] = mapped_column(String(20))
     correo: Mapped[str | None] = mapped_column(String(150))
     ciudad: Mapped[str | None] = mapped_column(String(100))
+    codigo_municipio: Mapped[str | None] = mapped_column(CHAR(5), ForeignKey("municipio.codigo"))  # v1.6
     creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
