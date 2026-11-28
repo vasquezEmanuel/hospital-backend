@@ -31,7 +31,7 @@ verifica que ambos coincidan.
 - `paciente` — identificado por su documento; ubicación opcional en `municipio` → `departamento` (DIVIPOLA del DANE).
 - `atencion` — pertenece a un paciente; referencia aseguradora y profesional; se relaciona N:M con `tratamiento`.
 - `diagnostico_bucal` ↔ `cie10` (N:M mediante `cie10_x_diagnostico_bucal`): solo admite códigos marcados como
-  odontológicos, validado por la API y por un *trigger*. `diagnostico_hospitalario` es 1:1 con `cie10`.
+  odontológicos, validado por la API y por un *trigger*. `diagnostico_hospitalario` también es una entidad propia, relacionada con `cie10` mediante `cie10_x_diagnostico_hospitalario` (N:M, cualquier código).
 - `imagen_clinica` — siempre asociada a un paciente; opcionalmente a una atención y a un diagnóstico bucal.
 - `auditoria` — registro inmutable de toda consulta o modificación de datos de pacientes.
 - `importacion` e `importacion_fila` — trazabilidad y cola de revisión de las cargas.
@@ -41,7 +41,7 @@ El rol del usuario (`odontologo`, `administrador`) no está en la base de datos:
 ## Reglas de negocio y seguridad
 1. El documento de identidad identifica de forma única al paciente (puede corregirse, nunca duplicarse).
 2. Todo código CIE-10 de un diagnóstico bucal debe ser odontológico; el de hospitalización puede ser cualquiera.
-3. Una atención tiene cero o más diagnósticos bucales y, a lo sumo, uno de hospitalización.
+3. Una atención tiene cero o más diagnósticos bucales y, cero o más de hospitalización.
 4. Toda imagen queda asociada, como mínimo, al paciente.
 5. Diagnósticos, imágenes, profesionales y catálogos **se inactivan, nunca se eliminan**; pacientes y atenciones no tienen `DELETE`.
 6. Toda consulta o modificación de datos de pacientes queda en la auditoría, registrada antes de ejecutarse.

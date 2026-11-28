@@ -33,7 +33,7 @@ def datos(client, db, seed):
             "fecha_atencion": "2026-09-20",
             "id_aseguradora": nueva.id_aseguradora,
             "id_profesional": prof.id_profesional,
-            "diagnostico_hospitalario": {"descripcion_original": "Tumor", "cod_4": "C187"},
+            "diagnosticos_hospitalarios": [{"descripcion": "Tumor", "codigos": ["C187"]}],
             "diagnosticos_bucales": [{"descripcion": "Caries", "codigos": ["K021"]}],
         },
     )

@@ -1,8 +1,8 @@
 """Alta, edición y baja de diagnósticos de una atención ya registrada. Carpeta: app/services — bajas y ediciones.
 
-Reglas 2 (bucal: solo códigos odontológicos; hospitalario: cualquiera), 3 (0+ bucales, a lo sumo un hospitalario:
-UNIQUE por atención, por eso se reactiva en vez de duplicar) y 5 (los diagnósticos se inactivan, nunca se borran).
-Cambiar los códigos de un diagnóstico bucal reemplaza sus vínculos N:M; la auditoría deja el rastro del cambio.
+Reglas 2 (bucal: solo códigos odontológicos; hospitalización: cualquiera), 3 (0+ diagnósticos de cada tipo; v1.7) y
+5 (los diagnósticos se inactivan, nunca se borran). Cambiar los códigos de un diagnóstico reemplaza sus vínculos N:M;
+la auditoría deja el rastro del cambio.
 """
 
 from uuid import UUID
@@ -12,10 +12,15 @@ from sqlalchemy.orm import Session
 
 from app.models import Atencion, DiagnosticoBucal, DiagnosticoHospitalario
 from app.repositories import atencion_repo
-from app.schemas.atencion import AtencionDetalle, DiagnosticoBucalIn, DiagnosticoBucalUpdate, DiagnosticoHospitalarioIn
+from app.schemas.atencion import (
+    AtencionDetalle,
+    DiagnosticoBucalIn,
+    DiagnosticoBucalUpdate,
+    DiagnosticoHospitalarioIn,
+    DiagnosticoHospitalarioUpdate,
+)
 from app.services import atencion_service
 from app.services.almacenamiento import Almacenamiento
-from app.services.enfermedad_service import normalizar_codigo
 from app.services.errors import DatosInvalidosError, NotFoundError
 
 
@@ -87,32 +92,46 @@ def inactivar_bucal(db: Session, id_dx: UUID) -> None:
     db.commit()
 
 
-def guardar_hospitalario(
+def paciente_de_hospitalario(db: Session, id_dx: UUID) -> UUID | None:
+    """Paciente (UUID) de un diagnóstico de hospitalización, para auditar antes de modificarlo."""
+    d = atencion_repo.hospitalario_por_public_id(db, id_dx)
+    return atencion_repo.paciente_publico_de_atencion(db, d.id_atencion) if d else None
+
+
+def agregar_hospitalario(
     db: Session, almacen: Almacenamiento, id_atencion: UUID, datos: DiagnosticoHospitalarioIn
 ) -> AtencionDetalle:
-    """Crea o reemplaza el diagnóstico de hospitalización (regla 3: uno solo). Si estaba inactivo, lo reactiva."""
     atencion = _atencion(db, id_atencion)
-    cod = normalizar_codigo(datos.cod_4) if datos.cod_4 else None
-    atencion_service.validar_codigos(db, [], cod)  # regla 2: cualquier código, pero existente
-    actual = atencion_repo.hospitalario_de(db, atencion.id_atencion)
-    if actual is None:
-        db.add(
-            DiagnosticoHospitalario(
-                id_atencion=atencion.id_atencion, descripcion_original=datos.descripcion_original, cod_4=cod
-            )
+    existentes = atencion_service.validar_codigos(db, [], datos.codigos)  # regla 2: cualquier código, pero existente
+    db.add(
+        DiagnosticoHospitalario(
+            id_atencion=atencion.id_atencion,
+            descripcion_original=datos.descripcion,
+            codigos=[existentes[c] for c in sorted(datos.codigos)],
         )
-    else:
-        actual.descripcion_original = datos.descripcion_original
-        actual.cod_4 = cod
-        actual.activo = True
+    )
     _confirmar(db)
     return atencion_service.obtener(db, almacen, id_atencion)
 
 
-def inactivar_hospitalario(db: Session, id_atencion: UUID) -> None:
-    atencion = _atencion(db, id_atencion)
-    actual = atencion_repo.hospitalario_de(db, atencion.id_atencion)
-    if actual is None or not actual.activo:
-        raise NotFoundError("La atención no tiene diagnóstico de hospitalización")
-    actual.activo = False
+def modificar_hospitalario(
+    db: Session, almacen: Almacenamiento, id_dx: UUID, datos: DiagnosticoHospitalarioUpdate
+) -> AtencionDetalle:
+    d = atencion_repo.hospitalario_por_public_id(db, id_dx)
+    if d is None:
+        raise NotFoundError("Diagnóstico de hospitalización no encontrado")
+    if datos.codigos is not None:
+        existentes = atencion_service.validar_codigos(db, [], datos.codigos)
+        d.codigos = [existentes[c] for c in sorted(datos.codigos)]
+    if datos.descripcion is not None:
+        d.descripcion_original = datos.descripcion
+    _confirmar(db)
+    return atencion_service.obtener(db, almacen, _public_de_atencion(db, d.id_atencion))
+
+
+def inactivar_hospitalario(db: Session, id_dx: UUID) -> None:
+    d = atencion_repo.hospitalario_por_public_id(db, id_dx)
+    if d is None:
+        raise NotFoundError("Diagnóstico de hospitalización no encontrado")
+    d.activo = False
     db.commit()

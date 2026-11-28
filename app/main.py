@@ -74,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(archivos.router, prefix="/api/v1")
     app.include_router(atenciones.router, prefix="/api/v1")
     app.include_router(diagnosticos.router, prefix="/api/v1")
+    app.include_router(diagnosticos.hospitalarios, prefix="/api/v1")
     app.include_router(ubicaciones.departamentos, prefix="/api/v1")
     app.include_router(ubicaciones.municipios, prefix="/api/v1")
     app.include_router(catalogos.aseguradoras, prefix="/api/v1")

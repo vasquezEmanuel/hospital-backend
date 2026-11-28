@@ -1,8 +1,8 @@
 """Búsqueda por enfermedad. Carpeta: app/repositories — Sprint 4 (búsqueda integrada: enfermedad -> pacientes).
 
-Entidades: cie10, diagnostico_hospitalario, diagnostico_bucal (tabla puente cie10_x_diagnostico_bucal), atencion,
-paciente. Solo cuentan diagnósticos activos (regla 5). Regla 2: un diagnóstico bucal solo se vincula a códigos
-odontológicos; el diagnóstico de hospitalización puede ser cualquier código.
+Entidades: cie10, diagnostico_hospitalario y diagnostico_bucal (con sus tablas puente N:M), atencion, paciente. Solo
+cuentan diagnósticos activos (regla 5). Regla 2: un diagnóstico bucal solo se vincula a códigos odontológicos; el
+diagnóstico de hospitalización puede ser cualquier código. Regla 3: una atención puede tener varios de cada tipo.
 """
 
 from sqlalchemy import Select, func, select
@@ -10,12 +10,15 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import Atencion, DiagnosticoBucal, DiagnosticoHospitalario, Paciente
 from app.models.diagnostico import cie10_x_diagnostico_bucal as puente
+from app.models.diagnostico import cie10_x_diagnostico_hospitalario as puente_hosp
 from app.schemas.enfermedad import Ambito
 
 
 def _atenciones_con_codigo(cod_4: str, ambito: Ambito) -> Select:
-    hospitalizacion = select(DiagnosticoHospitalario.id_atencion).where(
-        DiagnosticoHospitalario.cod_4 == cod_4, DiagnosticoHospitalario.activo.is_(True)
+    hospitalizacion = (
+        select(DiagnosticoHospitalario.id_atencion)
+        .join(puente_hosp, puente_hosp.c.id_diagnostico_hosp == DiagnosticoHospitalario.id_diagnostico_hosp)
+        .where(puente_hosp.c.cod_4 == cod_4, DiagnosticoHospitalario.activo.is_(True))
     )
     bucal = (
         select(DiagnosticoBucal.id_atencion)
@@ -47,15 +50,19 @@ def atenciones(
     return [tuple(f) for f in filas], total
 
 
-def hospitalarios(db: Session, ids_atencion: list[int]) -> dict[int, DiagnosticoHospitalario]:
+def hospitalarios(db: Session, ids_atencion: list[int]) -> dict[int, list[DiagnosticoHospitalario]]:
+    por_atencion: dict[int, list[DiagnosticoHospitalario]] = {i: [] for i in ids_atencion}
     if not ids_atencion:
-        return {}
+        return por_atencion
     filas = db.scalars(
-        select(DiagnosticoHospitalario).where(
-            DiagnosticoHospitalario.id_atencion.in_(ids_atencion), DiagnosticoHospitalario.activo.is_(True)
-        )
+        select(DiagnosticoHospitalario)
+        .where(DiagnosticoHospitalario.id_atencion.in_(ids_atencion), DiagnosticoHospitalario.activo.is_(True))
+        .options(selectinload(DiagnosticoHospitalario.codigos))
+        .order_by(DiagnosticoHospitalario.id_diagnostico_hosp)
     )
-    return {d.id_atencion: d for d in filas}
+    for d in filas:
+        por_atencion[d.id_atencion].append(d)
+    return por_atencion
 
 
 def bucales(db: Session, ids_atencion: list[int]) -> dict[int, list[DiagnosticoBucal]]:

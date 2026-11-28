@@ -1,7 +1,8 @@
 """Atenciones. Carpeta: app/services — Sprint 7 (pantallas 'Atenciones', 'Nueva atención', 'Detalle de atención').
 
-Reglas: 2 (códigos del diagnóstico bucal odontológicos; el de hospitalización, cualquiera), 3 (0+ bucales, a lo sumo un
-hospitalario), 5 (solo diagnósticos activos), 1 (la atención se asocia a un paciente existente, por su UUID).
+Reglas: 2 (códigos del diagnóstico bucal odontológicos; el de hospitalización, cualquiera), 3 (0+ diagnósticos
+bucales y 0+ de hospitalización, v1.7), 5 (solo diagnósticos activos), 1 (la atención se asocia a un paciente
+existente, por su UUID).
 La atención se guarda completa o no se guarda (una sola transacción). Las imágenes se suben después con
 POST /imagenes indicando id_atencion / id_diagnostico_bucal.
 """
@@ -60,7 +61,6 @@ def armar(db: Session, atenciones: list[Atencion], imagenes: dict[UUID, list]) -
     bucales = enfermedad_repo.bucales(db, ids)
     items = []
     for a in atenciones:
-        hosp = hospitalarios.get(a.id_atencion)
         items.append(
             AtencionExpediente(
                 id_atencion=a.public_id,
@@ -73,14 +73,15 @@ def armar(db: Session, atenciones: list[Atencion], imagenes: dict[UUID, list]) -
                 plan_tratamiento=a.plan_tratamiento,
                 observaciones=a.observaciones,
                 registrada_en=a.creado_en,
-                diagnostico_hospitalario=(
+                diagnosticos_hospitalarios=[
                     DiagnosticoHospitalarioOut(
-                        descripcion_original=hosp.descripcion_original,
-                        codigo=_codigo(hosp.cie10) if hosp.cie10 else None,
+                        id_diagnostico_hospitalario=d.public_id,
+                        descripcion=d.descripcion_original,
+                        codigos=[_codigo(c) for c in d.codigos],
+                        codificado=bool(d.codigos),
                     )
-                    if hosp
-                    else None
-                ),
+                    for d in hospitalarios.get(a.id_atencion, [])
+                ],
                 diagnosticos_bucales=[
                     DiagnosticoBucalOut(
                         id_diagnostico_bucal=d.public_id,
@@ -123,7 +124,6 @@ def listar(db: Session, *, page: int, page_size: int, cod_4: str | None, id_paci
     imagenes = atencion_repo.conteo_imagenes(db, ids)
     items = []
     for a, p in filas:
-        hosp = hospitalarios.get(a.id_atencion)
         items.append(
             AtencionListItem(
                 id_atencion=a.public_id,
@@ -133,7 +133,7 @@ def listar(db: Session, *, page: int, page_size: int, cod_4: str | None, id_paci
                 paciente=_resumen(p),
                 aseguradora=a.aseguradora.nombre if a.aseguradora else None,
                 profesional=a.profesional.nombre if a.profesional else a.profesional_texto,
-                diagnostico_hospitalario=(hosp.cod_4 or hosp.descripcion_original) if hosp else None,
+                diagnosticos_hospitalarios=[d.descripcion_original for d in hospitalarios.get(a.id_atencion, [])],
                 diagnosticos_bucales=[d.descripcion for d in bucales.get(a.id_atencion, [])],
                 total_imagenes=imagenes.get(a.id_atencion, 0),
             )
@@ -163,9 +163,11 @@ def _activo(db: Session, modelo, id_: int | None, etiqueta: str) -> None:
         raise DatosInvalidosError(f"{etiqueta} {id_} no existe o está inactivo")
 
 
-def validar_codigos(db: Session, codigos_bucales: list[str], cod_hospitalario: str | None = None) -> dict[str, Cie10]:
+def validar_codigos(
+    db: Session, codigos_bucales: list[str], codigos_hospitalarios: list[str] | None = None
+) -> dict[str, Cie10]:
     """Regla 2: todos los códigos existen en el catálogo y los de diagnóstico bucal son odontológicos."""
-    pedidos = set(codigos_bucales) | ({cod_hospitalario} if cod_hospitalario else set())
+    pedidos = set(codigos_bucales) | set(codigos_hospitalarios or [])
     existentes = atencion_repo.codigos_existentes(db, sorted(pedidos))
     faltan = sorted(pedidos - existentes.keys())
     if faltan:
@@ -193,9 +195,11 @@ def crear(db: Session, almacen: Almacenamiento, datos: AtencionCreate, *, auth_s
         raise DatosInvalidosError("Algún tratamiento está inactivo")
 
     # Regla 2: hospitalario = cualquier código existente; bucal = código existente Y odontológico.
-    dh = datos.diagnostico_hospitalario
-    hosp_cod = normalizar_codigo(dh.cod_4) if dh and dh.cod_4 else None
-    existentes = validar_codigos(db, [c for d in datos.diagnosticos_bucales for c in d.codigos], hosp_cod)
+    existentes = validar_codigos(
+        db,
+        [c for d in datos.diagnosticos_bucales for c in d.codigos],
+        [c for d in datos.diagnosticos_hospitalarios for c in d.codigos],
+    )
 
     # Profesional: el indicado; si no, el que está enlazado con el usuario que registra (auth_id = su "sub").
     id_prof, texto = datos.id_profesional, datos.profesional_texto
@@ -217,12 +221,12 @@ def crear(db: Session, almacen: Almacenamiento, datos: AtencionCreate, *, auth_s
     atencion.tratamientos = sorted(tratamientos, key=lambda t: t.nombre)
     try:
         atencion_repo.agregar(db, atencion)
-        if datos.diagnostico_hospitalario:
+        for d in datos.diagnosticos_hospitalarios:
             db.add(
                 DiagnosticoHospitalario(
                     id_atencion=atencion.id_atencion,
-                    descripcion_original=datos.diagnostico_hospitalario.descripcion_original,
-                    cod_4=hosp_cod,
+                    descripcion_original=d.descripcion,
+                    codigos=[existentes[c] for c in d.codigos],
                 )
             )
         for d in datos.diagnosticos_bucales:

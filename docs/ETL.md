@@ -26,7 +26,7 @@ Los archivos reales NUNCA se suben a Git (carpeta `datos_reales/`, ignorada).
   (regla 1): la fila va a revisión.
 - Fechas de Excel (tipo fecha o número de serie) y texto `DD/MM/AAAA` o `AAAA-MM-DD`.
 - **Diagnóstico de hospitalización:** debe resolver a un código CIE-10 (`C187-TUMOR MALIGNO DEL COLON`, `C187`,
-  o la descripción exacta). Si no, la fila va a revisión.
+  o la descripción exacta). Si no, la fila va a revisión. Se guarda como un diagnóstico de hospitalización con ese código.
 - **Diagnóstico bucal:** en la fuente es texto clínico libre (`CARIES`, `GINGIVITIS`). Si resuelve a códigos, se
   vinculan y deben ser odontológicos (regla 2; si no, la fila va a revisión). Si no resuelve, se guarda **solo el
   texto original** en `diagnostico_bucal`, sin código, pendiente de codificar.

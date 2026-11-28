@@ -1,7 +1,8 @@
 """Esquemas de atenciones. Carpeta: app/schemas — Sprint 7.
 
-Reglas 2 y 3: cada diagnóstico bucal lleva 1+ códigos CIE-10 odontológicos; a lo sumo un diagnóstico de
-hospitalización por atención. Los identificadores que salen y entran son UUID (S6); catálogos usan su id entero.
+Reglas 2 y 3: cada diagnóstico bucal lleva 1+ códigos CIE-10 odontológicos; la atención puede tener varios
+diagnósticos de hospitalización (v1.7), cada uno con 0+ códigos CIE-10 de cualquier tipo. Los identificadores que
+salen y entran son UUID (S6); los catálogos usan su id entero.
 """
 
 from datetime import date, time
@@ -20,13 +21,17 @@ def _codigo(v: str) -> str:
 
 
 class DiagnosticoHospitalarioIn(BaseModel):
-    descripcion_original: str = Field(min_length=2, max_length=2000, examples=["Neoplasia maligna de colon sigmoide"])
-    cod_4: str | None = Field(default=None, examples=["C187"], description="Cualquier código CIE-10 (regla 2)")
+    descripcion: str = Field(min_length=2, max_length=2000, examples=["Neoplasia maligna de colon sigmoide"])
+    codigos: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Códigos CIE-10 (cualquiera, regla 2). Puede ir vacío: queda solo el texto, pendiente de codificar",
+    )
 
-    @field_validator("cod_4")
+    @field_validator("codigos")
     @classmethod
-    def _cod(cls, v: str | None) -> str | None:
-        return _codigo(v) if v else None
+    def _codigos(cls, v: list[str]) -> list[str]:
+        return list(dict.fromkeys(_codigo(c) for c in v))
 
 
 class DiagnosticoBucalIn(BaseModel):
@@ -50,7 +55,7 @@ class AtencionCreate(BaseModel):
     plan_tratamiento: str | None = Field(default=None, max_length=5000)
     observaciones: str | None = Field(default=None, max_length=5000)
     ids_tratamientos: list[int] = Field(default_factory=list, max_length=30)
-    diagnostico_hospitalario: DiagnosticoHospitalarioIn | None = None
+    diagnosticos_hospitalarios: list[DiagnosticoHospitalarioIn] = Field(default_factory=list, max_length=10)
     diagnosticos_bucales: list[DiagnosticoBucalIn] = Field(default_factory=list, max_length=10)
 
     @field_validator("fecha_atencion")
@@ -110,7 +115,9 @@ class AtencionListItem(BaseModel):
     paciente: PacienteResumen
     aseguradora: str | None = None
     profesional: str | None = None
-    diagnostico_hospitalario: str | None = Field(default=None, description="Código CIE-10 o texto original")
+    diagnosticos_hospitalarios: list[str] = Field(
+        description="Descripción de cada diagnóstico de hospitalización activo"
+    )
     diagnosticos_bucales: list[str] = Field(description="Descripciones de los diagnósticos bucales")
     total_imagenes: int
 
@@ -135,5 +142,24 @@ class DiagnosticoBucalUpdate(BaseModel):
     @model_validator(mode="after")
     def _algo_que_cambiar(self) -> "DiagnosticoBucalUpdate":
         if not self.model_fields_set or self.descripcion is None and self.codigos is None:
+            raise ValueError("Envía descripcion y/o codigos")
+        return self
+
+
+class DiagnosticoHospitalarioUpdate(BaseModel):
+    """PATCH de un diagnóstico de hospitalización: solo lo enviado cambia. `codigos` reemplaza la lista completa
+    (puede ser `[]`: queda solo el texto)."""
+
+    descripcion: str | None = Field(default=None, min_length=2, max_length=2000)
+    codigos: list[str] | None = Field(default=None, max_length=10)
+
+    @field_validator("codigos")
+    @classmethod
+    def _codigos(cls, v: list[str] | None) -> list[str] | None:
+        return list(dict.fromkeys(_codigo(c) for c in v)) if v is not None else v
+
+    @model_validator(mode="after")
+    def _algo_que_cambiar(self) -> "DiagnosticoHospitalarioUpdate":
+        if self.descripcion is None and self.codigos is None:
             raise ValueError("Envía descripcion y/o codigos")
         return self

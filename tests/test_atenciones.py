@@ -36,7 +36,7 @@ def _cuerpo(cat, **extra):
         "id_aseguradora": cat["sura"].id_aseguradora,
         "ubicacion": "Piso 3",
         "ids_tratamientos": [cat["trat"][0].id_tratamiento, cat["trat"][1].id_tratamiento],
-        "diagnostico_hospitalario": {"descripcion_original": "Tumor de colon", "cod_4": "C18.7"},
+        "diagnosticos_hospitalarios": [{"descripcion": "Tumor de colon", "codigos": ["C18.7"]}],
         "diagnosticos_bucales": [{"descripcion": "Caries", "codigos": ["k02.1", "K021"]}],
         "plan_tratamiento": "Operatoria",
     }
@@ -48,7 +48,9 @@ def test_crear_atencion_completa_y_ver_detalle(client, cat, db):
     r = client.post(A, json=_cuerpo(cat))
     assert r.status_code == 201, r.text
     d = r.json()
-    assert d["diagnostico_hospitalario"]["codigo"]["cod_4"] == "C187"
+    assert [
+        (h["descripcion"], [c["cod_4"] for c in h["codigos"]], h["codificado"]) for h in d["diagnosticos_hospitalarios"]
+    ] == [("Tumor de colon", ["C187"], True)]
     assert [c["cod_4"] for c in d["diagnosticos_bucales"][0]["codigos"]] == ["K021"]  # sin duplicados
     assert [t["nombre"] for t in d["tratamientos"]] == ["Operatoria", "RX"]
     assert d["profesional"] == "Dra. Gloria Alvarez"  # enlazado por el sub del usuario (auth_id)
@@ -89,7 +91,7 @@ def test_lista_filtros(client, cat):
         ({"diagnosticos_bucales": [{"descripcion": "x", "codigos": []}]}, 422),
         ({"diagnosticos_bucales": [{"descripcion": "Caries", "codigos": ["C187"]}]}, 422),  # no odontológico
         ({"diagnosticos_bucales": [{"descripcion": "Caries", "codigos": ["Z000"]}]}, 422),  # no existe
-        ({"diagnostico_hospitalario": {"descripcion_original": "x", "cod_4": "Z000"}}, 422),
+        ({"diagnosticos_hospitalarios": [{"descripcion": "xx", "codigos": ["Z000"]}]}, 422),
         ({"ids_tratamientos": [999999]}, 422),
         ({"id_aseguradora": 999999}, 422),
         ({"id_profesional": 999999}, 422),
@@ -107,18 +109,32 @@ def test_inactivos_se_rechazan_y_no_queda_nada_guardado(client, cat, db):
     assert db.execute(text("SELECT count(*) FROM atencion")).scalar_one() == antes
 
 
-def test_hospitalario_es_opcional_y_se_acepta_solo_texto(client, cat):
+def test_hospitalarios_son_opcionales_se_aceptan_solo_texto_y_pueden_ser_varios(client, cat):
     r = client.post(
         A,
         json=_cuerpo(
             cat,
-            diagnostico_hospitalario={"descripcion_original": "Pendiente de codificar"},
+            diagnosticos_hospitalarios=[
+                {"descripcion": "Pendiente de codificar"},
+                {"descripcion": "Tumor de colon", "codigos": ["C18.7", "k02.1", "C187"]},
+            ],
             diagnosticos_bucales=[],
             ids_tratamientos=[],
         ),
     )
-    assert r.status_code == 201
-    assert r.json()["diagnostico_hospitalario"]["codigo"] is None and r.json()["diagnosticos_bucales"] == []
+    assert r.status_code == 201, r.text
+    h = r.json()["diagnosticos_hospitalarios"]
+    assert [(x["descripcion"], x["codificado"]) for x in h] == [
+        ("Pendiente de codificar", False),
+        ("Tumor de colon", True),
+    ]
+    assert h[0]["codigos"] == [] and [c["cod_4"] for c in h[1]["codigos"]] == [
+        "C187",
+        "K021",
+    ]  # cualquier código, sin duplicados
+    assert r.json()["diagnosticos_bucales"] == []
+    sin = client.post(A, json=_cuerpo(cat, diagnosticos_hospitalarios=[]))
+    assert sin.status_code == 201 and sin.json()["diagnosticos_hospitalarios"] == []
 
 
 def test_profesional_texto_tiene_prioridad_sobre_el_enlazado(client, cat):
@@ -268,7 +284,7 @@ def test_patch_modifica_plan_observaciones_y_tratamientos(client, cat):
     assert (n["plan_tratamiento"], n["observaciones"]) == ("Nuevo plan", "Control en 1 mes")
     assert [t["nombre"] for t in n["tratamientos"]] == ["RX"]  # reemplaza, no suma
     assert n["ubicacion"] == "Piso 3" and n["fecha_atencion"] == "2026-10-01"  # lo no enviado no cambia
-    assert n["diagnosticos_bucales"] == d["diagnosticos_bucales"] and n["diagnostico_hospitalario"]["codigo"]
+    assert n["diagnosticos_bucales"] == d["diagnosticos_bucales"] and n["diagnosticos_hospitalarios"][0]["codigos"]
     assert client.patch(f"{A}/{d['id_atencion']}", json={"ids_tratamientos": []}).json()["tratamientos"] == []
 
 
@@ -421,23 +437,58 @@ def test_agregar_corregir_y_dar_de_baja_un_diagnostico_bucal(client, cat, db):
     assert "Pulpitis" not in volcado  # nunca el texto clínico
 
 
-def test_diagnostico_hospitalario_crear_reemplazar_baja_y_reactivar(client, cat, db):
-    at = _crear(client, cat, diagnostico_hospitalario=None)
-    assert at["diagnostico_hospitalario"] is None
-    ruta = f"{A}/{at['id_atencion']}/diagnostico-hospitalario"
-    r = client.put(ruta, json={"descripcion_original": "Tumor de colon", "cod_4": "C18.7"})
-    assert r.status_code == 200 and r.json()["diagnostico_hospitalario"]["codigo"]["cod_4"] == "C187"
-    r = client.put(ruta, json={"descripcion_original": "Solo texto"})  # reemplaza, sin duplicar (regla 3)
-    assert r.json()["diagnostico_hospitalario"] == {"descripcion_original": "Solo texto", "codigo": None}
-    assert client.put(ruta, json={"descripcion_original": "x" * 5, "cod_4": "ZZZZ"}).status_code == 422
-    assert client.delete(ruta).status_code == 204
-    assert client.get(f"{A}/{at['id_atencion']}").json()["diagnostico_hospitalario"] is None
-    assert client.delete(ruta).status_code == 404
-    assert client.put(ruta, json={"descripcion_original": "Reactivado"}).json()["diagnostico_hospitalario"] is not None
-    assert db.execute(text("SELECT count(*) FROM diagnostico_hospitalario")).scalar_one() == 1
+def test_diagnosticos_hospitalarios_agregar_corregir_y_dar_de_baja(client, cat, db):
+    at = _crear(client, cat, diagnosticos_hospitalarios=[])
+    assert at["diagnosticos_hospitalarios"] == []
+    base = f"{A}/{at['id_atencion']}/diagnosticos-hospitalarios"
+    assert client.post(base, json={"descripcion": "xx", "codigos": ["ZZZZ"]}).status_code == 422  # no existe
+    assert client.post(base, json={"descripcion": "x"}).status_code == 422  # muy corto
+    r1 = client.post(base, json={"descripcion": "Tumor de colon", "codigos": ["C18.7"]})
+    assert r1.status_code == 201, r1.text
+    r2 = client.post(base, json={"descripcion": "Solo texto"})  # varios por atención, y sin código
+    assert [h["descripcion"] for h in r2.json()["diagnosticos_hospitalarios"]] == ["Tumor de colon", "Solo texto"]
+    uno, dos = (h["id_diagnostico_hospitalario"] for h in r2.json()["diagnosticos_hospitalarios"])
+
+    ruta = f"/api/v1/diagnosticos-hospitalarios/{dos}"
+    r = client.patch(ruta, json={"descripcion": "Ya codificado", "codigos": ["K021", "C187"]})
+    assert r.status_code == 200, r.text
+    h = r.json()["diagnosticos_hospitalarios"][1]
+    assert (
+        h["descripcion"] == "Ya codificado"
+        and [c["cod_4"] for c in h["codigos"]] == ["C187", "K021"]
+        and h["codificado"]
+    )
+    assert client.patch(ruta, json={"codigos": ["ZZZZ"]}).status_code == 422
+    assert client.patch(ruta, json={}).status_code == 422
+    solo_texto = client.patch(ruta, json={"codigos": []}).json()["diagnosticos_hospitalarios"][1]  # quitar los códigos
+    assert (
+        solo_texto["codigos"] == []
+        and solo_texto["codificado"] is False
+        and solo_texto["descripcion"] == "Ya codificado"
+    )
+    assert (
+        client.patch(ruta, json={"descripcion": "Otro texto"}).json()["diagnosticos_hospitalarios"][1]["descripcion"]
+        == "Otro texto"
+    )
+
+    assert client.delete(f"/api/v1/diagnosticos-hospitalarios/{uno}").status_code == 204
+    quedan = client.get(f"{A}/{at['id_atencion']}").json()["diagnosticos_hospitalarios"]
+    assert [h["descripcion"] for h in quedan] == ["Otro texto"]  # regla 5: el otro queda oculto, no borrado
+    assert db.execute(text("SELECT count(*) FROM diagnostico_hospitalario WHERE NOT activo")).scalar_one() == 1
+    assert client.delete(f"/api/v1/diagnosticos-hospitalarios/{uno}").status_code == 404
+    assert client.patch(f"/api/v1/diagnosticos-hospitalarios/{uno}", json={"descripcion": "xx"}).status_code == 404
+    assert client.delete("/api/v1/diagnosticos-hospitalarios/5").status_code == 422  # id numérico
     nula = "00000000-0000-0000-0000-000000000000"
-    assert client.put(f"{A}/{nula}/diagnostico-hospitalario", json={"descripcion_original": "xx"}).status_code == 404
-    assert client.delete(f"{A}/{nula}/diagnostico-hospitalario").status_code == 404
+    assert client.post(f"{A}/{nula}/diagnosticos-hospitalarios", json={"descripcion": "xx"}).status_code == 404
+
+    acciones = [a for (a,) in db.execute(text("SELECT accion FROM auditoria"))]
+    for esperada in (
+        "agregar_diagnostico_hospitalario",
+        "editar_diagnostico_hospitalario",
+        "inactivar_diagnostico_hospitalario",
+    ):
+        assert esperada in acciones
+    assert "Tumor de colon" not in str(db.execute(text("SELECT detalle FROM auditoria")).all())  # nunca texto clínico
 
 
 def test_diagnosticos_solo_personal_clinico(db, cat):
@@ -451,7 +502,8 @@ def test_diagnosticos_solo_personal_clinico(db, cat):
         c = TestClient(app)
         u = "00000000-0000-0000-0000-000000000000"
         assert c.delete(f"/api/v1/diagnosticos-bucales/{u}").status_code == 403
-        assert c.put(f"{A}/{u}/diagnostico-hospitalario", json={"descripcion_original": "xx"}).status_code == 403
+        assert c.delete(f"/api/v1/diagnosticos-hospitalarios/{u}").status_code == 403
+        assert c.post(f"{A}/{u}/diagnosticos-hospitalarios", json={"descripcion": "xx"}).status_code == 403
     finally:
         app.dependency_overrides.clear()
 

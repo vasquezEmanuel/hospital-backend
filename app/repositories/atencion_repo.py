@@ -1,6 +1,6 @@
 """Acceso a datos de atencion y sus tablas hijas. Carpeta: app/repositories — Sprint 7.
 
-Entidades: atencion, diagnostico_hospitalario, diagnostico_bucal (+ puente CIE-10), atencion_x_tratamiento.
+Entidades: atencion, diagnostico_hospitalario y diagnostico_bucal (+ puentes CIE-10), atencion_x_tratamiento.
 Regla 5: solo cuentan diagnósticos e imágenes activos. Regla 2: el trigger fn_validar_cie10_odontologico es la red de
 seguridad final; el servicio ya valida antes de insertar.
 """
@@ -21,6 +21,7 @@ from app.models import (
     Tratamiento,
 )
 from app.models.diagnostico import cie10_x_diagnostico_bucal as puente
+from app.models.diagnostico import cie10_x_diagnostico_hospitalario as puente_hosp
 from app.repositories.busqueda import normalizar_busqueda, sin_tildes
 
 
@@ -47,10 +48,12 @@ def _filtrada(
         ]
         stmt = stmt.where(or_(*condiciones))
     if cod_4:
-        hosp = exists().where(
-            DiagnosticoHospitalario.id_atencion == Atencion.id_atencion,
-            DiagnosticoHospitalario.cod_4 == cod_4,
-            DiagnosticoHospitalario.activo.is_(True),
+        hosp = (
+            exists()
+            .where(DiagnosticoHospitalario.id_atencion == Atencion.id_atencion)
+            .where(DiagnosticoHospitalario.activo.is_(True))
+            .where(puente_hosp.c.id_diagnostico_hosp == DiagnosticoHospitalario.id_diagnostico_hosp)
+            .where(puente_hosp.c.cod_4 == cod_4)
         )
         bucal = (
             exists()
@@ -127,9 +130,10 @@ def bucal_por_public_id(db: Session, public_id: UUID) -> DiagnosticoBucal | None
     return d if d is not None and d.activo else None
 
 
-def hospitalario_de(db: Session, id_atencion: int) -> DiagnosticoHospitalario | None:
-    """Diagnóstico de hospitalización de la atención, activo o no (UNIQUE por atención: se reactiva, no se duplica)."""
-    return db.scalar(select(DiagnosticoHospitalario).where(DiagnosticoHospitalario.id_atencion == id_atencion))
+def hospitalario_por_public_id(db: Session, public_id: UUID) -> DiagnosticoHospitalario | None:
+    """Diagnóstico de hospitalización ACTIVO por su identificador público (regla 5)."""
+    d = db.scalar(select(DiagnosticoHospitalario).where(DiagnosticoHospitalario.public_id == public_id))
+    return d if d is not None and d.activo else None
 
 
 def paciente_publico_de_atencion(db: Session, id_atencion: int) -> UUID | None:

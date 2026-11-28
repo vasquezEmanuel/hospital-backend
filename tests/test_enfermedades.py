@@ -30,17 +30,17 @@ def datos(db, seed):
         db.query(Atencion).filter_by(id_paciente=maria.id_paciente).order_by(Atencion.fecha_atencion.desc()).first()
     )
     hosp_maria = DiagnosticoHospitalario(
-        id_atencion=reciente.id_atencion, descripcion_original="C187-TUMOR MALIGNO DEL COLON", cod_4="C187"
+        id_atencion=reciente.id_atencion, descripcion_original="C187-TUMOR MALIGNO DEL COLON"
     )
+    hosp_maria.codigos = [db.get(Cie10, "C187")]
     caries = DiagnosticoBucal(id_atencion=reciente.id_atencion, descripcion="Caries")
     caries.codigos = [db.get(Cie10, "K021")]
     mucositis = DiagnosticoBucal(id_atencion=reciente.id_atencion, descripcion="Mucositis por quimioterapia")
     atencion_carlos = Atencion(id_paciente=carlos.id_paciente, fecha_atencion=date(2026, 7, 7))
     db.add_all([hosp_maria, caries, mucositis, atencion_carlos])
     db.flush()
-    hosp_carlos = DiagnosticoHospitalario(
-        id_atencion=atencion_carlos.id_atencion, descripcion_original="C187", cod_4="C187"
-    )
+    hosp_carlos = DiagnosticoHospitalario(id_atencion=atencion_carlos.id_atencion, descripcion_original="C187")
+    hosp_carlos.codigos = [db.get(Cie10, "C187")]
     resto = DiagnosticoBucal(id_atencion=atencion_carlos.id_atencion, descripcion="Resto radicular")
     resto.codigos = [db.get(Cie10, "K021")]
     db.add_all([hosp_carlos, resto])
@@ -66,7 +66,7 @@ def test_busqueda_por_diagnostico_de_hospitalizacion_como_en_la_pantalla_de_diag
     assert maria["documento_identidad"] == "1025847210" and maria["nombre"] == "María Rodríguez"
     assert maria["codigo_paciente"] == f"P-{datos['maria'].id_paciente:03d}"
     assert maria["coincide_en"] == ["hospitalizacion"]
-    assert maria["diagnostico_hospitalario"] == "C187-TUMOR MALIGNO DEL COLON"
+    assert maria["diagnosticos_hospitalarios"] == ["C187-TUMOR MALIGNO DEL COLON"]
     assert maria["diagnosticos_bucales"] == ["Caries", "Mucositis por quimioterapia"]  # todos los de la atención
     assert carlos["nombre"] == "Carlos Gómez" and carlos["diagnosticos_bucales"] == ["Resto radicular"]
 
@@ -87,8 +87,10 @@ def test_busqueda_por_diagnostico_bucal_y_el_ambito_filtra(client, datos, almace
     )  # un código no odontológico no está en diagnósticos bucales
 
 
-def test_si_el_codigo_esta_en_hospitalizacion_y_en_bucal_la_atencion_sale_una_sola_vez(client, datos, almacen):
-    datos["hosp_carlos"].cod_4 = "K021"  # el diagnóstico de hospitalización puede ser cualquier código CIE-10
+def test_si_el_codigo_esta_en_hospitalizacion_y_en_bucal_la_atencion_sale_una_sola_vez(client, datos, almacen, db):
+    datos["hosp_carlos"].codigos = [
+        db.get(Cie10, "K021")
+    ]  # el diagnóstico de hospitalización puede ser cualquier código CIE-10
     body = _buscar(client, "K021").json()
     assert body["total"] == 2
     por_nombre = {i["nombre"]: i["coincide_en"] for i in body["items"]}
@@ -139,7 +141,9 @@ def test_regla_6_cada_paciente_expuesto_queda_en_auditoria_una_sola_vez(client, 
     antigua = (
         db.query(Atencion).filter_by(id_paciente=datos["maria"].id_paciente).order_by(Atencion.fecha_atencion).first()
     )
-    db.add(DiagnosticoHospitalario(id_atencion=antigua.id_atencion, descripcion_original="C187", cod_4="C187"))
+    antiguo = DiagnosticoHospitalario(id_atencion=antigua.id_atencion, descripcion_original="C187")
+    antiguo.codigos = [db.get(Cie10, "C187")]
+    db.add(antiguo)
     db.flush()
     assert _buscar(client, "C187").json()["total"] == 3  # tres atenciones, dos pacientes
     _buscar(client, "K021", en="hospitalizacion")  # sin resultados: queda un solo evento, sin paciente

@@ -8,6 +8,7 @@
 -- v1.4: auditoría completa e inmutable (regla 6) (ver alembic/versions/0005_*.py).
 -- v1.5: identificador público UUID (public_id) en paciente, atencion, diagnostico_bucal e imagen_clinica (ver alembic/versions/0006_*.py).
 -- v1.6: departamento y municipio (DIVIPOLA del DANE) y paciente.codigo_municipio (ver alembic/versions/0007_*.py).
+-- v1.7: varios diagnósticos de hospitalización por atención con códigos N:M (ver alembic/versions/0008_*.py).
 --       Los datos de los dos catálogos se cargan con esa migración (alembic/data/*.csv); este archivo solo define su estructura.
 --       La línea base v1.0 vive intacta en alembic/sql/0001_baseline.sql.
 -- ============================================================================
@@ -105,14 +106,24 @@ CREATE TABLE atencion (
 CREATE INDEX idx_atencion_paciente ON atencion (id_paciente);
 CREATE INDEX idx_atencion_fecha ON atencion (fecha_atencion);
 
--- Diagnóstico de hospitalización: a lo sumo 1 por atención, relación simple con CIE-10.
+-- Diagnóstico de hospitalización (general): 0..N por atención (v1.7; antes a lo sumo uno), igual que el bucal.
 CREATE TABLE diagnostico_hospitalario (
-    id_diagnostico_hosp SERIAL PRIMARY KEY,
-    id_atencion         INTEGER NOT NULL UNIQUE REFERENCES atencion (id_atencion),
+    id_diagnostico_hosp  SERIAL PRIMARY KEY,
+    public_id            UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,  -- v1.7
+    id_atencion          INTEGER NOT NULL REFERENCES atencion (id_atencion),
     descripcion_original TEXT NOT NULL,   -- texto tal como viene de la fuente
-    cod_4               VARCHAR(10) REFERENCES cie10 (cod_4),
-    activo              BOOLEAN NOT NULL DEFAULT TRUE
+    activo               BOOLEAN NOT NULL DEFAULT TRUE
 );
+CREATE INDEX idx_diagnostico_hospitalario_atencion ON diagnostico_hospitalario (id_atencion);
+
+-- v1.7: tabla puente N:M — cada diagnóstico de hospitalización puede vincularse a 0 o más códigos CIE-10 (cualquiera,
+-- no solo odontológicos). Sustituye a la antigua columna diagnostico_hospitalario.cod_4.
+CREATE TABLE cie10_x_diagnostico_hospitalario (
+    cod_4                VARCHAR(10) NOT NULL REFERENCES cie10 (cod_4),
+    id_diagnostico_hosp  INTEGER NOT NULL REFERENCES diagnostico_hospitalario (id_diagnostico_hosp),
+    PRIMARY KEY (cod_4, id_diagnostico_hosp)
+);
+CREATE INDEX idx_cie10xdxhosp_cod4 ON cie10_x_diagnostico_hospitalario (cod_4);
 
 -- Diagnóstico bucal: 0..N por atención (una fila por cada DIAGNÓSTICO BUCAL no vacío de la fuente).
 CREATE TABLE diagnostico_bucal (

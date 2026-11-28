@@ -247,23 +247,21 @@ def _resolver_codigos(valor: str, cat: _Catalogo) -> tuple[list[str], str | None
     return [], f"sin coincidencia en el catálogo CIE-10: {valor!r}"
 
 
-def _resolver_diagnosticos(fila: FilaAtencion, cat: _Catalogo) -> tuple[str | None, list[tuple[str, list[str]]]]:
-    """Devuelve (código del diagnóstico de hospitalización, [(texto, códigos)] de los diagnósticos bucales).
+def _resolver_diagnosticos(fila: FilaAtencion, cat: _Catalogo) -> tuple[list[str], list[tuple[str, list[str]]]]:
+    """Devuelve (códigos del diagnóstico de hospitalización, [(texto, códigos)] de los diagnósticos bucales).
 
-    El diagnóstico de hospitalización debe resolver a un código (relación 1:1 con cie10). El diagnóstico bucal llega en
-    la fuente como texto clínico libre ("CARIES", "GINGIVITIS"): si resuelve a códigos se vinculan (y deben ser
+    El diagnóstico de hospitalización debe resolver a uno o más códigos (cualquiera, v1.7). El diagnóstico bucal llega
+    en la fuente como texto clínico libre ("CARIES", "GINGIVITIS"): si resuelve a códigos se vinculan (y deben ser
     odontológicos, regla 2); si no, se conserva SOLO el texto original, sin código, para codificarlo después.
     """
     motivos: list[str] = []
-    hospitalario = None
+    hospitalario: list[str] = []
     if fila.dx_hospitalario:
         codigos, error = _resolver_codigos(fila.dx_hospitalario, cat)
         if error:
             motivos.append(f"Diagnóstico de hospitalización: {error}")
-        elif len(codigos) != 1:  # regla 3: a lo sumo uno
-            motivos.append(f"Diagnóstico de hospitalización: se esperaba 1 código y hay {len(codigos)}")
         else:
-            hospitalario = codigos[0]
+            hospitalario = codigos
     bucales: list[tuple[str, list[str]]] = []
     for numero, valor in fila.dx_bucales:
         codigos, _sin_resolver = _resolver_codigos(valor, cat)  # sin resolver = texto libre, no es un error
@@ -344,14 +342,21 @@ def _procesar_fila(db: Session, fila: FilaAtencion, ctx: _Contexto) -> str:
                     "o": fila.observaciones,
                 },
             ).scalar_one()
-            if hospitalario:
-                db.execute(
+            if hospitalario:  # una fila con todos los códigos que resuelve la celda de la fuente
+                id_hosp = db.execute(
                     text(
-                        "INSERT INTO diagnostico_hospitalario (id_atencion, descripcion_original, cod_4) "
-                        "VALUES (:a, :d, :c)"
+                        "INSERT INTO diagnostico_hospitalario (id_atencion, descripcion_original) VALUES (:a, :d) "
+                        "RETURNING id_diagnostico_hosp"
                     ),
-                    {"a": id_atencion, "d": fila.dx_hospitalario, "c": hospitalario},
-                )
+                    {"a": id_atencion, "d": fila.dx_hospitalario},
+                ).scalar_one()
+                for cod_4 in hospitalario:
+                    db.execute(
+                        text(
+                            "INSERT INTO cie10_x_diagnostico_hospitalario (cod_4, id_diagnostico_hosp) VALUES (:c, :d)"
+                        ),
+                        {"c": cod_4, "d": id_hosp},
+                    )
             for descripcion, codigos in bucales:
                 id_bucal = db.execute(
                     text(

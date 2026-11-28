@@ -19,8 +19,10 @@ class CodigoCie10(BaseModel):
 
 
 class DiagnosticoHospitalarioOut(BaseModel):
-    descripcion_original: str
-    codigo: CodigoCie10 | None = None
+    id_diagnostico_hospitalario: UUID
+    descripcion: str
+    codigos: list[CodigoCie10]
+    codificado: bool  # False = solo texto, pendiente de codificar a CIE-10
 
 
 class DiagnosticoBucalOut(BaseModel):
@@ -46,7 +48,7 @@ class AtencionExpediente(BaseModel):
     plan_tratamiento: str | None = None
     observaciones: str | None = None
     registrada_en: datetime
-    diagnostico_hospitalario: DiagnosticoHospitalarioOut | None = None
+    diagnosticos_hospitalarios: list[DiagnosticoHospitalarioOut]
     diagnosticos_bucales: list[DiagnosticoBucalOut]
     tratamientos: list[TratamientoOut] = []
     imagenes: list[ImagenOut]

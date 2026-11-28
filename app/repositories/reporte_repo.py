@@ -7,7 +7,7 @@ cuentan únicamente diagnósticos e imágenes activos (regla 5).
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import Select, and_, distinct, exists, func, or_, select
+from sqlalchemy import Select, distinct, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.models.atencion import atencion_x_tratamiento
 from app.models.diagnostico import cie10_x_diagnostico_bucal as puente
+from app.models.diagnostico import cie10_x_diagnostico_hospitalario as puente_hosp
 from app.repositories.busqueda import sin_tildes
 
 
@@ -46,10 +47,15 @@ def _atenciones(f: Filtros) -> Select:
     if f.id_profesional is not None:
         stmt = stmt.where(Atencion.id_profesional == f.id_profesional)
     if f.cod_4:
-        hosp = exists().where(
-            DiagnosticoHospitalario.id_atencion == Atencion.id_atencion,
-            DiagnosticoHospitalario.cod_4 == f.cod_4,
-            DiagnosticoHospitalario.activo.is_(True),
+        hosp = (
+            exists()
+            .where(
+                DiagnosticoHospitalario.id_atencion == Atencion.id_atencion, DiagnosticoHospitalario.activo.is_(True)
+            )
+            .where(
+                puente_hosp.c.id_diagnostico_hosp == DiagnosticoHospitalario.id_diagnostico_hosp,
+                puente_hosp.c.cod_4 == f.cod_4,
+            )
         )
         bucal = (
             exists()
@@ -102,25 +108,40 @@ def por_aseguradora(db: Session, f: Filtros, limite: int):
     return [(e, None, c) for e, c in _filas(db, stmt, limite)]
 
 
-def _dx_hospitalario():
-    cod = DiagnosticoHospitalario.cod_4
-    return func.coalesce(
-        func.nullif(func.concat_ws(" · ", cod, Cie10.descripcion_4), ""),
-        DiagnosticoHospitalario.descripcion_original,
+def _etiquetas_hospitalarias():
+    """(id_atencion, etiqueta) de cada diagnóstico de hospitalización activo.
+
+    Con códigos CIE-10, una fila por código ("K02.1 · Caries de la dentina"); sin códigos, el texto original. Así un
+    diagnóstico con dos códigos cuenta en ambos y los reportes siguen agrupando por código estandarizado.
+    """
+    activo = DiagnosticoHospitalario.activo.is_(True)
+    codificados = (
+        select(
+            DiagnosticoHospitalario.id_atencion.label("id_atencion"),
+            func.concat_ws(" · ", Cie10.cod_4, Cie10.descripcion_4).label("etiqueta"),
+        )
+        .join(puente_hosp, puente_hosp.c.id_diagnostico_hosp == DiagnosticoHospitalario.id_diagnostico_hosp)
+        .join(Cie10, Cie10.cod_4 == puente_hosp.c.cod_4)
+        .where(activo)
     )
+    sin_codigo = select(
+        DiagnosticoHospitalario.id_atencion.label("id_atencion"),
+        DiagnosticoHospitalario.descripcion_original.label("etiqueta"),
+    ).where(
+        activo,
+        ~exists().where(puente_hosp.c.id_diagnostico_hosp == DiagnosticoHospitalario.id_diagnostico_hosp),
+    )
+    return codificados.union(sin_codigo).subquery("etiquetas_hosp")
 
 
 def por_dx_hospitalario(db: Session, f: Filtros, limite: int):
-    etiqueta = func.coalesce(_dx_hospitalario(), "Sin diagnóstico hospitalario").label("etiqueta")
-    cantidad = func.count()
+    et = _etiquetas_hospitalarias()
+    etiqueta = func.coalesce(et.c.etiqueta, "Sin diagnóstico hospitalario").label("etiqueta")
+    cantidad = func.count(distinct(Atencion.id_atencion))
     stmt = (
         select(etiqueta, cantidad)
         .select_from(Atencion)
-        .outerjoin(
-            DiagnosticoHospitalario,
-            and_(DiagnosticoHospitalario.id_atencion == Atencion.id_atencion, DiagnosticoHospitalario.activo.is_(True)),
-        )
-        .outerjoin(Cie10, Cie10.cod_4 == DiagnosticoHospitalario.cod_4)
+        .outerjoin(et, et.c.id_atencion == Atencion.id_atencion)
         .where(_donde_ids(f))
         .group_by(etiqueta)
         .order_by(cantidad.desc(), etiqueta)
@@ -183,30 +204,25 @@ def por_fecha(db: Session, f: Filtros, limite: int):
 
 
 def relacion_hospitalario_bucal(db: Session, f: Filtros, limite: int):
-    hosp = _dx_hospitalario().label("etiqueta")
-    cantidad = func.count()
+    et = _etiquetas_hospitalarias()
+    cantidad = func.count(distinct(DiagnosticoBucal.id_diagnostico_bucal))
     clave = _clave_bucal()
     stmt = (
-        select(hosp, func.min(DiagnosticoBucal.descripcion), cantidad)
+        select(et.c.etiqueta, func.min(DiagnosticoBucal.descripcion), cantidad)
         .select_from(DiagnosticoBucal)
-        .join(
-            DiagnosticoHospitalario,
-            and_(
-                DiagnosticoHospitalario.id_atencion == DiagnosticoBucal.id_atencion,
-                DiagnosticoHospitalario.activo.is_(True),
-            ),
-        )
-        .outerjoin(Cie10, Cie10.cod_4 == DiagnosticoHospitalario.cod_4)
+        .join(et, et.c.id_atencion == DiagnosticoBucal.id_atencion)
         .where(DiagnosticoBucal.activo.is_(True), DiagnosticoBucal.id_atencion.in_(_atenciones(f).scalar_subquery()))
-        .group_by(hosp, clave)
-        .order_by(cantidad.desc(), hosp)
+        .group_by(et.c.etiqueta, clave)
+        .order_by(cantidad.desc(), et.c.etiqueta)
     )
     return [(h, b, c) for h, b, c in _filas(db, stmt, limite)]
 
 
 def diagnosticos_distintos(db: Session) -> int:
-    hosp = select(DiagnosticoHospitalario.cod_4.label("c")).where(
-        DiagnosticoHospitalario.activo.is_(True), DiagnosticoHospitalario.cod_4.is_not(None)
+    hosp = (
+        select(puente_hosp.c.cod_4.label("c"))
+        .join(DiagnosticoHospitalario, DiagnosticoHospitalario.id_diagnostico_hosp == puente_hosp.c.id_diagnostico_hosp)
+        .where(DiagnosticoHospitalario.activo.is_(True))
     )
     bucal = (
         select(puente.c.cod_4.label("c"))

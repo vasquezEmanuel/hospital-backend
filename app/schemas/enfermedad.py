@@ -31,7 +31,9 @@ class EnfermedadPacienteOut(BaseModel):
     coincide_en: list[Literal["hospitalizacion", "bucal"]] = Field(
         description="Dónde aparece el código en esa atención: diagnóstico de hospitalización y/o diagnóstico bucal"
     )
-    diagnostico_hospitalario: str | None = None
+    diagnosticos_hospitalarios: list[str] = Field(
+        description="Todos los diagnósticos de hospitalización activos de la atención"
+    )
     diagnosticos_bucales: list[str] = Field(description="Todos los diagnósticos bucales activos de la atención")
     total_imagenes: int = Field(description="Imágenes activas del paciente")
     imagenes: list[ImagenOut] = Field(description="Las más recientes (máximo max_imagenes), con enlace firmado")

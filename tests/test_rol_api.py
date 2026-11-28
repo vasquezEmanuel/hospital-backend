@@ -150,10 +150,7 @@ def test_la_api_puede_corregir_e_inactivar_diagnosticos(api):
         {"d": dx},
     )
     api.execute(
-        text(
-            "UPDATE diagnostico_hospitalario SET descripcion_original = 'y', cod_4 = NULL, activo = FALSE "
-            "WHERE id_atencion = :a"
-        ),
+        text("UPDATE diagnostico_hospitalario SET descripcion_original = 'y', activo = FALSE WHERE id_atencion = :a"),
         {"a": at},
     )
     api.execute(text("DELETE FROM cie10_x_diagnostico_bucal WHERE id_diagnostico_bucal = :d"), {"d": dx})
@@ -184,6 +181,7 @@ def test_la_api_puede_corregir_e_inactivar_diagnosticos(api):
         "UPDATE diagnostico_bucal SET id_atencion = 1",
         "UPDATE diagnostico_hospitalario SET id_atencion = 1",
         "DELETE FROM diagnostico_hospitalario WHERE true",
+        "UPDATE cie10_x_diagnostico_hospitalario SET cod_4 = 'K021'",
         "DELETE FROM aseguradora",
         "DELETE FROM profesional",
         "SELECT * FROM alembic_version",

@@ -48,10 +48,10 @@ def buscar(
 
     items = []
     for atencion, paciente in filas:
-        hosp = hospitalarios.get(atencion.id_atencion)
+        dx_hosp = hospitalarios[atencion.id_atencion]
         dx_bucales = bucales[atencion.id_atencion]
         coincide = []
-        if hosp is not None and hosp.cod_4 == cod:
+        if any(c.cod_4 == cod for d in dx_hosp for c in d.codigos):
             coincide.append("hospitalizacion")
         if any(c.cod_4 == cod for d in dx_bucales for c in d.codigos):
             coincide.append("bucal")
@@ -65,7 +65,7 @@ def buscar(
                 id_atencion=atencion.public_id,
                 fecha_atencion=atencion.fecha_atencion,
                 coincide_en=coincide,
-                diagnostico_hospitalario=hosp.descripcion_original if hosp else None,
+                diagnosticos_hospitalarios=[d.descripcion_original for d in dx_hosp],
                 diagnosticos_bucales=[d.descripcion for d in dx_bucales],
                 total_imagenes=len(todas),
                 imagenes=[imagen_service.a_salida(almacen, f) for f in todas[:max_imagenes]],

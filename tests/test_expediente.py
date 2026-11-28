@@ -33,7 +33,9 @@ def test_expediente_reune_atenciones_diagnosticos_e_imagenes(client, seed, db, a
         db.query(Atencion).filter_by(id_paciente=maria.id_paciente).order_by(Atencion.fecha_atencion.desc()).all()
     )
     reciente.ubicacion, reciente.profesional_texto = "Consulta externa 3", "Dra. Laura Castaño"
-    db.add(DiagnosticoHospitalario(id_atencion=reciente.id_atencion, descripcion_original="C187-COLON", cod_4="C187"))
+    hosp = DiagnosticoHospitalario(id_atencion=reciente.id_atencion, descripcion_original="C187-COLON")
+    hosp.codigos = [db.get(Cie10, "C187")]
+    db.add(hosp)
     con_codigo = DiagnosticoBucal(id_atencion=reciente.id_atencion, descripcion="Caries")
     con_codigo.codigos = [db.get(Cie10, "K021")]
     sin_codigo = DiagnosticoBucal(id_atencion=reciente.id_atencion, descripcion="Mucositis por quimioterapia")
@@ -49,16 +51,15 @@ def test_expediente_reune_atenciones_diagnosticos_e_imagenes(client, seed, db, a
     assert [a["fecha_atencion"] for a in body["atenciones"]] == ["2026-09-12", "2026-08-18"]  # reciente primero
     a1, a2 = body["atenciones"]
     assert a1["aseguradora"] == "SURA" and a1["profesional"] == "Dra. Laura Castaño"
-    assert a1["diagnostico_hospitalario"]["codigo"] == {
-        "cod_4": "C187",
-        "descripcion": "Tumor maligno del colon sigmoide",
-        "es_odontologico": False,
-    }
+    (hosp,) = a1["diagnosticos_hospitalarios"]
+    assert hosp["codificado"] is True and hosp["codigos"] == [
+        {"cod_4": "C187", "descripcion": "Tumor maligno del colon sigmoide", "es_odontologico": False}
+    ]
     bucales = {d["descripcion"]: d for d in a1["diagnosticos_bucales"]}
     assert bucales["Caries"]["codificado"] is True and bucales["Caries"]["codigos"][0]["cod_4"] == "K021"
     assert bucales["Mucositis por quimioterapia"]["codificado"] is False  # solo texto: pendiente de codificar
     assert len(a1["imagenes"]) == 1 and a1["imagenes"][0]["url"].startswith("http://testserver/api/v1/archivos/")
-    assert a2["diagnostico_hospitalario"] is None and a2["diagnosticos_bucales"] == [] and a2["imagenes"] == []
+    assert a2["diagnosticos_hospitalarios"] == [] and a2["diagnosticos_bucales"] == [] and a2["imagenes"] == []
     assert len(body["imagenes_sin_atencion"]) == 1
 
 
@@ -89,4 +90,4 @@ def test_atencion_sin_diagnosticos_ni_imagenes_sale_vacia_pero_presente(client, 
     body = client.get(f"/api/v1/pacientes/{seed['carlos'].public_id}/expediente").json()
     (atencion,) = body["atenciones"]
     assert atencion["fecha_atencion"] == "2026-01-05" and atencion["diagnosticos_bucales"] == []
-    assert atencion["diagnostico_hospitalario"] is None and atencion["imagenes"] == []
+    assert atencion["diagnosticos_hospitalarios"] == [] and atencion["imagenes"] == []

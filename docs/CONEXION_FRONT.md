@@ -159,13 +159,13 @@ Todas las rutas llevan `Authorization: Bearer <token>`. Leer: odontólogo o admi
   "plan_tratamiento": "Operatoria y RX",
   "observaciones": null,
   "ids_tratamientos": [1, 2],
-  "diagnostico_hospitalario": { "descripcion_original": "Tumor de colon", "cod_4": "C187" },
+  "diagnosticos_hospitalarios": [ { "descripcion": "Tumor de colon", "codigos": ["C187"] } ],
   "diagnosticos_bucales": [ { "descripcion": "Caries de la dentina", "codigos": ["K021"] } ]
 }
 ```
 
 - Los códigos CIE-10 aceptan con o sin punto (`K02.1` o `K021`).
-- Cada diagnóstico bucal necesita **al menos un código odontológico**; el de hospitalización puede ser cualquier código (o ir solo con texto).
+- Cada diagnóstico bucal necesita **al menos un código odontológico**; los de hospitalización pueden llevar cualquier código (o ir solo con texto). Ambos son listas: una atención admite varios diagnósticos de cada tipo, y cada uno con varios códigos.
 - Si no se envía `id_profesional` ni `profesional_texto`, se usa el profesional enlazado al usuario que inicia sesión (`profesional.auth_id` = su id en Supabase Auth).
 - La fecha no puede ser futura. Errores: 404 paciente inexistente, 422 catálogo inexistente/inactivo o código no válido.
 - **PATCH de una atención:** envía solo los campos que cambian. Editables: `fecha_atencion` (no futura), `hora_atencion`, `id_aseguradora`, `ubicacion`, `id_profesional`, `profesional_texto`, `plan_tratamiento`, `observaciones` e `ids_tratamientos`. `null` borra un dato opcional (no la fecha). `ids_tratamientos` **reemplaza la lista completa** (`[]` la deja vacía). Responde 200 con el detalle actualizado. No se cambian el paciente ni los diagnósticos por esta ruta. Cuerpo vacío o sin campos → 422; atención inexistente → 404; catálogo inexistente o inactivo → 422.
@@ -275,8 +275,9 @@ En un sistema clínico **"borrar" siempre es una baja lógica**: el registro se 
 | Agregar diagnóstico bucal a una atención | `POST /atenciones/{id}/diagnosticos-bucales` | clínico | Cuerpo `{descripcion, codigos[]}` (códigos odontológicos). Devuelve la atención completa. |
 | Corregir diagnóstico bucal | `PATCH /diagnosticos-bucales/{id}` | clínico | `descripcion` y/o `codigos` (reemplaza la lista). Devuelve la atención completa. |
 | Baja de diagnóstico bucal | `DELETE /diagnosticos-bucales/{id}` | clínico | 204. |
-| Crear/reemplazar diagnóstico de hospitalización | `PUT /atenciones/{id}/diagnostico-hospitalario` | clínico | Cuerpo `{descripcion_original, cod_4?}`. Solo hay uno por atención; si estaba dado de baja, se reactiva. |
-| Baja de diagnóstico de hospitalización | `DELETE /atenciones/{id}/diagnostico-hospitalario` | clínico | 204; 404 si no tiene. |
+| Agregar diagnóstico de hospitalización | `POST /atenciones/{id}/diagnosticos-hospitalarios` | clínico | Cuerpo `{descripcion, codigos[]}` (`codigos` opcional, cualquier CIE-10). Devuelve la atención completa. |
+| Corregir diagnóstico de hospitalización | `PATCH /diagnosticos-hospitalarios/{id}` | clínico | `descripcion` y/o `codigos` (reemplaza la lista; `[]` lo deja solo con texto). Devuelve la atención completa. |
+| Baja de diagnóstico de hospitalización | `DELETE /diagnosticos-hospitalarios/{id}` | clínico | 204. |
 | Reasignar una imagen | `PATCH /imagenes/{id}` | clínico | `{id_atencion?, id_diagnostico_bucal?}`; `null` desvincula (sigue siendo del paciente). Todo debe ser del mismo paciente. |
 | Baja de imagen | `DELETE /imagenes/{id}` | clínico | Ya existía. |
 
@@ -299,3 +300,8 @@ En un sistema clínico **"borrar" siempre es una baja lógica**: el registro se 
 1. Conectar login, listar pacientes, crear paciente y subir imagen.
 2. Cuando el front esté desplegado: agregar su dirección `https://...` a `CORS_ORIGINS`.
 3. Al pasar a producción: `CORS_ORIGINS` solo con `https://`, `DOCS_ENABLED=false`, `ENVIRONMENT=production`.
+
+### Cambio de forma (v1.7): diagnósticos de hospitalización múltiples
+
+- En las respuestas de atención, expediente y búsqueda por enfermedad, `diagnostico_hospitalario` (objeto o `null`) pasa a **`diagnosticos_hospitalarios`** (lista). Cada elemento: `{id_diagnostico_hospitalario, descripcion, codigos[], codificado}`; en el listado de atenciones y en la búsqueda por enfermedad es una lista de textos.
+- Se eliminan `PUT` y `DELETE /atenciones/{id}/diagnostico-hospitalario`; se reemplazan por los endpoints de la tabla anterior.

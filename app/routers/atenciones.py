@@ -7,7 +7,7 @@ antes de entregar o modificar el dato. Rol: odontólogo o administrador.
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.security import CurrentUser, require_clinical_staff
@@ -204,13 +204,15 @@ def agregar_diagnostico_bucal(
         raise _traducir(exc) from exc
 
 
-@router.put(
-    "/{id_atencion}/diagnostico-hospitalario",
+@router.post(
+    "/{id_atencion}/diagnosticos-hospitalarios",
     response_model=AtencionDetalle,
-    summary="Crear o reemplazar el diagnóstico de hospitalización (uno por atención)",
+    status_code=status.HTTP_201_CREATED,
+    summary="Agregar un diagnóstico de hospitalización (general) a una atención; devuelve la atención completa",
+    description="Una atención puede tener varios. `codigos`: cualquier código CIE-10; puede ir vacío (solo texto).",
     responses=_DX,
 )
-def guardar_diagnostico_hospitalario(
+def agregar_diagnostico_hospitalario(
     id_atencion: UUID,
     datos: DiagnosticoHospitalarioIn,
     db: Session = Depends(get_db),
@@ -219,37 +221,12 @@ def guardar_diagnostico_hospitalario(
     _: CurrentUser = Depends(require_clinical_staff),
 ):
     auditor.registrar(
-        "guardar_diagnostico_hospitalario",
+        "agregar_diagnostico_hospitalario",
         "diagnostico_hospitalario",
         id_paciente=diagnostico_service.paciente_de_atencion(db, id_atencion),
         detalle={"id_atencion": str(id_atencion)},
     )
     try:
-        return diagnostico_service.guardar_hospitalario(db, almacen, id_atencion, datos)
+        return diagnostico_service.agregar_hospitalario(db, almacen, id_atencion, datos)
     except (NotFoundError, DatosInvalidosError) as exc:
         raise _traducir(exc) from exc
-
-
-@router.delete(
-    "/{id_atencion}/diagnostico-hospitalario",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Dar de baja el diagnóstico de hospitalización (borrado lógico)",
-    responses={404: {"model": ErrorResponse, "description": "La atención no existe o no tiene diagnóstico"}},
-)
-def inactivar_diagnostico_hospitalario(
-    id_atencion: UUID,
-    db: Session = Depends(get_db),
-    auditor: Auditor = Depends(get_auditor),
-    _: CurrentUser = Depends(require_clinical_staff),
-):
-    auditor.registrar(
-        "inactivar_diagnostico_hospitalario",
-        "diagnostico_hospitalario",
-        id_paciente=diagnostico_service.paciente_de_atencion(db, id_atencion),
-        detalle={"id_atencion": str(id_atencion)},
-    )
-    try:
-        diagnostico_service.inactivar_hospitalario(db, id_atencion)
-    except NotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
